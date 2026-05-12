@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # --- Frontendy (React / npm) ---
+  - package-ecosystem: "npm"
+    directory: "/frontend-chat"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend-ciso"
+    schedule:
+      interval: "weekly"
+
+  # --- Backendy (FastAPI / PyTorch / pip) ---
+  - package-ecosystem: "pip"
+    directory: "/api-gateway"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "pip"
+    directory: "/ml-classifier"
+    schedule:
+      interval: "weekly"
+
+  # --- Docker (Obrazy bazowe) ---
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
