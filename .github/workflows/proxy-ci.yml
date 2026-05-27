@@ -1,0 +1,35 @@
+name: Proxy Gateway CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'api-gateway/**'
+      - '.github/workflows/proxy-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Build, Test and Analyze
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: './api-gateway'
+
+    steps:
+      - name: Download the repository code
+        uses: actions/checkout@v4
+
+      - name: Step 1 - Installing Dependencies
+        run: echo "[MOCK] Installing packages (Pip/Poetry) or building a Docker image"
+
+      - name: Step 2 - Code Quality (Linters and Formatters)
+        run: echo "[MOCK] Checking code quality and formatting"
+
+      - name: Step 3 - Unit Tests
+        run: echo "[MOCK] Running tests (e.g., pytest)"
+
+      - name: Step 4 - DevSecOps Security (SAST)
+        run: echo "[MOCK] Vulnerability scanning (e.g., Bandit / Trivy)"
