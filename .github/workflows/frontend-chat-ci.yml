@@ -1,12 +1,12 @@
-name: Proxy Gateway CI
+name: Frontend Chat CI
 
 on:
   pull_request:
     branches:
       - main
     paths:
-      - 'api-gateway/**'
-      - '.github/workflows/proxy-ci.yml'
+      - 'frontend-chat/**'
+      - '.github/workflows/frontend-chat-ci.yml'
   workflow_dispatch:
 
 jobs:
@@ -16,24 +16,28 @@ jobs:
 
     defaults:
       run:
-        working-directory: './api-gateway'
+        working-directory: './frontend-chat'
 
     steps:
       - name: Download the repository code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Step 1 - Installing Dependencies
-        run: echo "[MOCK] Installing packages (Pip/Poetry) or building a Docker image"
+        run: echo "[MOCK] Installing packages (node) or building a Docker image"
 
       - name: Step 2 - Code Quality (Linters and Formatters)
         run: echo "[MOCK] Checking code quality and formatting"
 
       - name: Step 3 - Unit Tests
-        run: echo "[MOCK] Running tests (e.g., pytest)"
+        run: echo "[MOCK] Running tests"
 
       - name: Step 4 - DevSecOps Security (SAST)
         run: echo "[MOCK] Vulnerability scanning (e.g., Bandit / Trivy)"
-  
 
   build:
     name: Build and Push Docker Image
@@ -43,6 +47,11 @@ jobs:
     steps:
       - name: Download the repository code
         uses: actions/checkout@v4
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Step 5 - Logging in to GHCR
         run: echo "[MOCK] docker login ghcr.io -u uzytkownik -p token"
