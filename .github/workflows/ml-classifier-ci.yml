@@ -9,6 +9,10 @@ on:
       - '.github/workflows/ml-classifier-ci.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   test:
     name: Build, Test and Analyze
