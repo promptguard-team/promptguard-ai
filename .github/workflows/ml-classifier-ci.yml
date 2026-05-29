@@ -1,0 +1,51 @@
+name: ML Classifier CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'ml-classifier/**'
+      - '.github/workflows/ml-classifier-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Build, Test and Analyze
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: './ml-classifier'
+
+    steps:
+      - name: Download the repository code
+        uses: actions/checkout@v4
+
+      - name: Step 1 - Installing Dependencies
+        run: echo "[MOCK] Installing packages (Pip/Poetry) or building a Docker image"
+
+      - name: Step 2 - Code Quality (Linters and Formatters)
+        run: echo "[MOCK] Checking code quality and formatting"
+
+      - name: Step 3 - Unit Tests
+        run: echo "[MOCK] Running tests (e.g., pytest)"
+
+      - name: Step 4 - DevSecOps Security (SAST)
+        run: echo "[MOCK] Vulnerability scanning (e.g., Bandit / Trivy)"
+  
+
+  build:
+    name: Build and Push Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download the repository code
+        uses: actions/checkout@v4
+
+      - name: Step 5 - Logging in to GHCR
+        run: echo "[MOCK] docker login ghcr.io -u uzytkownik -p token"
+
+      - name: Step 6 - Build & Push
+        run: echo "[MOCK] docker build -t ghcr.io/org/promptguard-ml:latest . && docker push"
