@@ -13,6 +13,10 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Build, Test and Analyze
@@ -44,7 +48,7 @@ jobs:
 
       - name: Step 4 - DevSecOps Security (SAST)
         run: echo "[MOCK] Vulnerability scanning (e.g., Bandit / Trivy)"
-  
+
 
   build:
     name: Build and Push Docker Image
