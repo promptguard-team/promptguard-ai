@@ -1,12 +1,12 @@
-name: Frontend Chat CI
+name: Frontend CISO CI
 
 on:
   pull_request:
     branches:
       - main
     paths:
-      - 'frontend-chat/**'
-      - '.github/workflows/frontend-chat-ci.yml'
+      - 'frontend-ciso/**'
+      - '.github/workflows/frontend-ciso-ci.yml'
   workflow_dispatch:
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: './frontend-chat'
+        working-directory: './frontend-ciso'
 
     steps:
       - name: Download the repository code
@@ -57,4 +57,4 @@ jobs:
         run: echo "[MOCK] docker login ghcr.io -u uzytkownik -p token"
 
       - name: Step 6 - Build & Push
-        run: echo "[MOCK] docker build -t ghcr.io/org/promptguard-chat:latest . && docker push"
+        run: echo "[MOCK] docker build -t ghcr.io/org/promptguard-ciso:latest . && docker push"
