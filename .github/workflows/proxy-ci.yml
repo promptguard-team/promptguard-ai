@@ -22,6 +22,11 @@ jobs:
       - name: Download the repository code
         uses: actions/checkout@v4
 
+      - name: Setup Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Step 1 - Installing Dependencies
         run: echo "[MOCK] Installing packages (Pip/Poetry) or building a Docker image"
 
@@ -43,6 +48,11 @@ jobs:
     steps:
       - name: Download the repository code
         uses: actions/checkout@v4
+
+      - name: Setup Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Step 5 - Logging in to GHCR
         run: echo "[MOCK] docker login ghcr.io -u uzytkownik -p token"
