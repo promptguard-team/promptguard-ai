@@ -26,6 +26,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: './api-gateway/requirements.txt'
 
       - name: Step 1 - Installing Dependencies
         run: echo "[MOCK] Installing packages (Pip/Poetry) or building a Docker image"
@@ -53,6 +55,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: './api-gateway/requirements.txt'
 
       - name: Step 5 - Logging in to GHCR
         run: echo "[MOCK] docker login ghcr.io -u uzytkownik -p token"
