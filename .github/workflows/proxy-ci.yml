@@ -1,0 +1,73 @@
+name: Proxy Gateway CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'api-gateway/**'
+      - '.github/workflows/proxy-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build, Test and Analyze
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: './api-gateway'
+
+    steps:
+      - name: Download the repository code
+        uses: actions/checkout@v4
+
+      - name: Setup Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: './api-gateway/requirements.txt'
+
+      - name: Step 1 - Installing Dependencies
+        run: echo "[MOCK] Installing packages (Pip/Poetry) or building a Docker image"
+
+      - name: Step 2 - Code Quality (Linters and Formatters)
+        run: echo "[MOCK] Checking code quality and formatting"
+
+      - name: Step 3 - Unit Tests
+        run: echo "[MOCK] Running tests (e.g., pytest)"
+
+      - name: Step 4 - DevSecOps Security (SAST)
+        run: echo "[MOCK] Vulnerability scanning (e.g., Bandit / Trivy)"
+
+
+  build:
+    name: Build and Push Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download the repository code
+        uses: actions/checkout@v4
+
+      - name: Setup Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: './api-gateway/requirements.txt'
+
+      - name: Step 5 - Logging in to GHCR
+        run: echo "[MOCK] docker login ghcr.io -u uzytkownik -p token"
+
+      - name: Step 6 - Build & Push
+        run: echo "[MOCK] docker build -t ghcr.io/org/promptguard-api:latest . && docker push"
