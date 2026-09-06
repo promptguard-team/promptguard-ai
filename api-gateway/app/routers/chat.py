@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db import get_session
-from app.deps import get_current_user, get_llm_client
+from app.deps import get_current_user, get_llm_client, get_sessionmaker
 from app.llm import LLMClient, LLMError
 from app.models import AuditAction, AuditEvent, User
 from app.rules import scan_text
@@ -12,38 +11,44 @@ router = APIRouter(tags=["chat"])
 
 
 async def _audit(
-    session: AsyncSession,
+    sessionmaker: async_sessionmaker[AsyncSession],
     user: User,
     action: AuditAction,
     prompt: str,
     response: str | None = None,
     rule: str | None = None,
 ) -> None:
-    """Persist one audit event for the request's outcome."""
-    session.add(
-        AuditEvent(
-            user_id=user.id,
-            action=action,
-            prompt=prompt,
-            response=response,
-            rule=rule,
+    """Persist one audit event for the request's outcome.
+
+    Opens its own short-lived session rather than reusing one held across
+    the request, so no pooled connection sits open during the provider
+    round-trip in `chat()`.
+    """
+    async with sessionmaker() as session:
+        session.add(
+            AuditEvent(
+                user_id=user.id,
+                action=action,
+                prompt=prompt,
+                response=response,
+                rule=rule,
+            )
         )
-    )
-    await session.commit()
+        await session.commit()
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     body: ChatRequest,
     user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    sessionmaker: async_sessionmaker[AsyncSession] = Depends(get_sessionmaker),
     llm: LLMClient = Depends(get_llm_client),
 ) -> ChatResponse:
     """Proxy a prompt to the LLM provider with inspection in both directions."""
     prompt_match = scan_text(body.prompt)
     if prompt_match is not None:
         await _audit(
-            session,
+            sessionmaker,
             user,
             AuditAction.blocked_prompt,
             body.prompt,
@@ -59,7 +64,7 @@ async def chat(
     except LLMError as exc:
         # The prompt may have reached the provider even though no usable
         # response came back, so the attempt is audited either way.
-        await _audit(session, user, AuditAction.allowed, body.prompt)
+        await _audit(sessionmaker, user, AuditAction.allowed, body.prompt)
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, detail="LLM provider unavailable"
         ) from exc
@@ -67,7 +72,7 @@ async def chat(
     response_match = scan_text(reply)
     if response_match is not None:
         await _audit(
-            session,
+            sessionmaker,
             user,
             AuditAction.blocked_response,
             body.prompt,
@@ -79,5 +84,5 @@ async def chat(
             blocked=True,
         )
 
-    await _audit(session, user, AuditAction.allowed, body.prompt, response=reply)
+    await _audit(sessionmaker, user, AuditAction.allowed, body.prompt, response=reply)
     return ChatResponse(response=reply)

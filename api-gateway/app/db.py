@@ -10,8 +10,13 @@ from sqlalchemy.ext.asyncio import (
 
 
 def build_engine(url: str) -> AsyncEngine:
-    """Create the async SQLAlchemy engine."""
-    return create_async_engine(url, pool_pre_ping=True)
+    """Create the async SQLAlchemy engine.
+
+    Pool size is sized explicitly (10 + 20 overflow = 30 concurrent
+    connections) so the request-concurrency limit is a stated decision
+    rather than SQLAlchemy's default of 5 + 10.
+    """
+    return create_async_engine(url, pool_size=10, max_overflow=20, pool_pre_ping=True)
 
 
 def build_sessionmaker(

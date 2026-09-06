@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +20,10 @@ async def register(
     result = await session.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="email already registered")
-    user = User(email=body.email, hashed_password=hash_password(body.password))
+    # Argon2id (~43ms of blocking CPU) would otherwise stall the event loop
+    # for the whole process, including every in-flight /chat request.
+    hashed_password = await anyio.to_thread.run_sync(hash_password, body.password)
+    user = User(email=body.email, hashed_password=hashed_password)
     session.add(user)
     await session.commit()
     await session.refresh(user)
@@ -33,11 +37,15 @@ async def login(
     """Verify credentials and issue a bearer token."""
     result = await session.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
-    if (
-        user is None
-        or not verify_password(body.password, user.hashed_password)
-        or not user.is_active
-    ):
+    if user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
+    # See the register handler: the same blocking-CPU concern applies here,
+    # and a login flood is the more likely trigger since it needs no prior
+    # registration.
+    password_ok = await anyio.to_thread.run_sync(
+        verify_password, body.password, user.hashed_password
+    )
+    if not password_ok or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
     return TokenResponse(access_token=create_access_token(user.id, user.role.value))
 
