@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from app.rules import scan_text
@@ -43,6 +45,18 @@ CASES = [
     ("asterisk-pbx-configuration-notes-updated", None),
     # a realistic sk-proj- style key must still be caught.
     (f"key: {_FAKE_OPENAI_PROJECT_KEY}", "openai_api_key"),
+    # ReDoS fix false positives: "sk-" as the tail of an ordinary word must
+    # not be flagged, even when a long alphanumeric run follows it.
+    ("https://intranet.corp/task-1234567890abcdefghijklmnop", None),
+    ("commit sha for risk-e3b0c44298fc1c149afbf4c8996fb924", None),
+    ("the disk-usageanalysisreport2026q1summary attachment", None),
+    # Fix 2: the private-key header is matched regardless of case.
+    ("-----begin rsa private key-----", "private_key_block"),
+    ("-----Begin RSA Private Key-----", "private_key_block"),
+    # Fix 3: a PESEL glued to a letter on either side is no longer hidden
+    # from detection by a `\b` word boundary.
+    ("44051401359x", "pesel"),
+    ("x44051401359", "pesel"),
 ]
 
 
@@ -54,3 +68,18 @@ def test_scan_text(text, expected_rule):
     else:
         assert match is not None
         assert match.rule == expected_rule
+
+
+def test_scan_text_adversarial_input_is_linear_time():
+    """Regression test for the catastrophic-backtracking OpenAI-key rule.
+
+    `ChatRequest.prompt` allows up to 32000 characters, and the old pattern
+    took ~5s on an adversarial input of that length (measured). 1.0s is a
+    generous bound chosen to avoid flakiness on slow CI while still catching
+    any reintroduction of exponential backtracking.
+    """
+    adversarial = "sk-a" * 8000
+    start = time.perf_counter()
+    scan_text(adversarial)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 1.0
