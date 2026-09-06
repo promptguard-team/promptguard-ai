@@ -11,7 +11,7 @@ from app.llm import LLMClient
 from app.models import Base
 from app.routers import auth, chat, health
 
-_SENSITIVE_FIELDS = frozenset({"password"})
+_SENSITIVE_FIELDS = frozenset({"password", "prompt"})
 
 
 @asynccontextmanager

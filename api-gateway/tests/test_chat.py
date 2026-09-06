@@ -56,6 +56,10 @@ async def test_chat_rejects_oversized_prompt(app, client, auth_headers):
         "/chat", json={"prompt": "a" * 32001}, headers=auth_headers
     )
     assert resp.status_code == 422
+    # The over-long prompt is exactly what this product expects to carry
+    # secrets, so it must not come back verbatim, un-inspected and
+    # un-audited, in the validation-error body.
+    assert "a" * 100 not in resp.text
     events = await _audit_events(app)
     assert len(events) == 0
 
