@@ -80,3 +80,22 @@ def test_load_refuses_when_card_is_missing(tmp_path):
     (tmp_path / "test-0.1.0.card.json").unlink()
     with pytest.raises(ModelLoadError, match="card"):
         ModelBundle.load(path)
+
+
+def test_load_refuses_unreadable_card(tmp_path):
+    path = _write_artifact(tmp_path, ["injection", "clean"])
+    (tmp_path / "test-0.1.0.card.json").write_text("{not json", encoding="utf-8")
+    with pytest.raises(ModelLoadError, match="card"):
+        ModelBundle.load(path)
+
+
+def test_load_refuses_card_without_model_version(tmp_path):
+    # Task 4 reads bundle.version on every request, so a card missing it must
+    # fail at load time rather than 500 on each call.
+    path = _write_artifact(tmp_path, ["injection", "clean"])
+    card_path = tmp_path / "test-0.1.0.card.json"
+    card = json.loads(card_path.read_text(encoding="utf-8"))
+    del card["model_version"]
+    card_path.write_text(json.dumps(card), encoding="utf-8")
+    with pytest.raises(ModelLoadError, match="model_version"):
+        ModelBundle.load(path)

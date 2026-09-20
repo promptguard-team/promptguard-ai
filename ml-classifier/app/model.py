@@ -60,6 +60,14 @@ class ModelBundle:
         except (OSError, ValueError) as exc:
             raise ModelLoadError(f"unreadable model card at {card_path}") from exc
 
+        model_version = card.get("model_version")
+        if not isinstance(model_version, str) or not model_version:
+            # Task 4 reads bundle.version on every request; a card missing
+            # this must fail at load time rather than 500 on each call.
+            raise ModelLoadError(
+                f"model card at {card_path} is missing 'model_version'"
+            )
+
         declared = card.get("environment", {}).get("scikit-learn")
         if declared != sklearn.__version__:
             raise ModelLoadError(
