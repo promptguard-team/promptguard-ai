@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from app.models import AuditAction, AuditEvent, Base, User
+from app.models import AuditAction, AuditEvent, Base, MLStatus, User
 
 
 @pytest_asyncio.fixture
@@ -71,3 +71,76 @@ async def test_audit_event_defaults(session: AsyncSession):
     fetched = result.scalar_one()
     assert fetched.rule is None
     assert fetched.response == "hello"
+
+
+def test_provider_error_action_exists():
+    assert AuditAction.provider_error.value == "provider_error"
+
+
+def test_ml_status_members():
+    assert {s.value for s in MLStatus} == {"skipped", "ok", "unavailable"}
+
+
+async def test_audit_event_defaults_to_skipped_and_unflagged(app):
+    import uuid
+
+    from sqlalchemy import select
+
+    from app.models import AuditEvent, User
+    from app.security import hash_password
+
+    maker = app.state.sessionmaker
+    async with maker() as session:
+        user = User(
+            id=uuid.uuid4(),
+            email="ml@example.com",
+            hashed_password=hash_password("secret123"),
+        )
+        session.add(user)
+        await session.commit()
+        session.add(
+            AuditEvent(user_id=user.id, action=AuditAction.allowed, prompt="hi")
+        )
+        await session.commit()
+        event = (await session.execute(select(AuditEvent))).scalars().one()
+        assert event.ml_status == MLStatus.skipped
+        assert event.flagged is False
+        assert event.ml_score is None
+        assert event.ml_label is None
+        assert event.ml_model_version is None
+
+
+async def test_audit_event_stores_a_verdict(app):
+    import uuid
+
+    from sqlalchemy import select
+
+    from app.models import AuditEvent, User
+    from app.security import hash_password
+
+    maker = app.state.sessionmaker
+    async with maker() as session:
+        user = User(
+            id=uuid.uuid4(),
+            email="ml2@example.com",
+            hashed_password=hash_password("secret123"),
+        )
+        session.add(user)
+        await session.commit()
+        session.add(
+            AuditEvent(
+                user_id=user.id,
+                action=AuditAction.allowed,
+                prompt="hi",
+                ml_status=MLStatus.ok,
+                ml_score=0.72,
+                ml_label="injection",
+                ml_model_version="stub-tfidf-0.1.0",
+                flagged=True,
+            )
+        )
+        await session.commit()
+        event = (await session.execute(select(AuditEvent))).scalars().one()
+        assert event.ml_score == 0.72
+        assert event.ml_model_version == "stub-tfidf-0.1.0"
+        assert event.flagged is True

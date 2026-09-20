@@ -102,6 +102,17 @@ def test_migrations_at_head_reproduce_models():
     Task 9), which is exactly when baseline drift would otherwise appear
     silently — a migration set that disagrees with the models looks correct
     and fails only later, in a real database.
+
+    What this comparison does NOT cover, because `_describe_schema` doesn't
+    capture it and/or SQLite reflection can't see it:
+    - `server_default` values (e.g. a column's default is compared only for
+      presence via nullable/type, not for the actual default expression).
+    - Foreign-key cascade options (`ondelete`/`onupdate`) — `fks` only
+      records the constrained/referred columns and table, not cascade rules.
+    - Enum value membership on SQLite — SQLAlchemy's `Enum` reflects there
+      as a plain `VARCHAR(n)` sized to the longest label, with no CHECK
+      constraint, so adding, removing, or renaming an enum member can leave
+      this test green even though PostgreSQL's real enum type would differ.
     """
     config = Config(str(ROOT / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
