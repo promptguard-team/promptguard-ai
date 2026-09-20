@@ -27,9 +27,7 @@ class ModelBundle:
         self._card = card
         classes = [str(c) for c in pipeline.classes_]
         if "injection" not in classes:
-            raise ModelLoadError(
-                f"model classes {classes} do not include 'injection'"
-            )
+            raise ModelLoadError(f"model classes {classes} do not include 'injection'")
         self._classes = classes
         self._injection_idx = classes.index("injection")
 
