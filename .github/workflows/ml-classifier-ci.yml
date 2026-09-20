@@ -37,16 +37,17 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
-          cache-dependency-path: './ml-classifier/requirements.txt'
+          cache-dependency-path: |
+            ./ml-classifier/requirements.txt
+            ./ml-classifier/requirements-dev.txt
 
       - name: Step 1 - Installing Dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Step 2 - Code Quality (Linters and Formatters)
         run: |
-          pip install ruff
-          ruff check app/ tests/
-          ruff format --check app/ tests/
+          ruff check app/ tests/ scripts/
+          ruff format --check app/ tests/ scripts/
 
       - name: Step 3 - Unit Tests
         run: pytest
