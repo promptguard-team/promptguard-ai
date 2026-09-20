@@ -1,0 +1,17 @@
+{
+  "model_version": "stub-tfidf-0.1.0",
+  "stub": true,
+  "trained_at": "2026-09-20",
+  "dataset": "hand-written in scripts/train_stub.py (40 examples)",
+  "classes": [
+    "clean",
+    "injection"
+  ],
+  "metrics": {
+    "note": "Meaningless. Fitted on 40 hand-written examples with no held-out set. Use scripts/evaluate.py against a real artifact for numbers."
+  },
+  "environment": {
+    "scikit-learn": "1.7.2",
+    "numpy": "2.5.3"
+  }
+}
