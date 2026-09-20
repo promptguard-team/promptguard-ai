@@ -4,6 +4,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app.classifier import ClassifierClient
 from app.llm import LLMClient
 from app.main import create_app
 from app.models import Base
@@ -33,6 +34,17 @@ async def app():
         api_key="test-key",
         model="test-model",
         transport=httpx.MockTransport(_llm_handler),
+    )
+
+    def _classifier_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"label": "clean", "score": 0.01, "model_version": "test-model-0"},
+        )
+
+    application.state.classifier_client = ClassifierClient(
+        base_url="http://ml.test",
+        transport=httpx.MockTransport(_classifier_handler),
     )
 
     yield application

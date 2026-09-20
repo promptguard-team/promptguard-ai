@@ -5,6 +5,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.classifier import ClassifierClient
 from app.llm import LLMClient
 from app.models import User
 from app.security import decode_access_token
@@ -58,3 +59,8 @@ async def get_current_user(
 def get_llm_client(request: Request) -> LLMClient:
     """Return the shared LLM client created in the lifespan."""
     return request.app.state.llm_client
+
+
+def get_classifier_client(request: Request) -> ClassifierClient:
+    """Return the shared classifier client created in the lifespan."""
+    return request.app.state.classifier_client

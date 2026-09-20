@@ -5,6 +5,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.classifier import ClassifierClient
 from app.config import get_settings
 from app.db import build_engine, build_sessionmaker
 from app.llm import LLMClient
@@ -29,13 +30,20 @@ async def lifespan(app: FastAPI):
         model=settings.llm_model,
         timeout_seconds=settings.llm_timeout_seconds,
     )
+    app.state.classifier_client = ClassifierClient(
+        base_url=settings.classifier_url,
+        timeout_seconds=settings.classifier_timeout_seconds,
+    )
     try:
         yield
     finally:
         try:
             await app.state.llm_client.aclose()
         finally:
-            await engine.dispose()
+            try:
+                await app.state.classifier_client.aclose()
+            finally:
+                await engine.dispose()
 
 
 async def validation_error_handler(

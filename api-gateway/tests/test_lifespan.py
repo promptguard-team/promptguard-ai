@@ -29,12 +29,14 @@ async def test_lifespan_sets_app_state_and_shuts_down_cleanly(tmp_path, monkeypa
         assert app_instance.state.engine is not None
         assert app_instance.state.sessionmaker is not None
         assert app_instance.state.llm_client is not None
+        assert app_instance.state.classifier_client is not None
 
         # The engine and sessionmaker are not just set but actually wired up.
         async with app_instance.state.sessionmaker() as session:
             await session.execute(text("SELECT 1"))
 
     # Shutdown ran to completion without raising (a failing dispose would
-    # have propagated out of the `async with` above), and the HTTP client is
-    # verifiably closed rather than merely assumed to be.
+    # have propagated out of the `async with` above), and both HTTP clients
+    # are verifiably closed rather than merely assumed to be.
     assert app_instance.state.llm_client._client.is_closed is True
+    assert app_instance.state.classifier_client._client.is_closed is True
