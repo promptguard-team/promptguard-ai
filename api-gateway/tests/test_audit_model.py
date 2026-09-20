@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import StaticPool
 
 from app.models import AuditAction, AuditEvent, Base, MLStatus, User
+from app.security import hash_password
 
 
 @pytest_asyncio.fixture
@@ -82,13 +83,6 @@ def test_ml_status_members():
 
 
 async def test_audit_event_defaults_to_skipped_and_unflagged(app):
-    import uuid
-
-    from sqlalchemy import select
-
-    from app.models import AuditEvent, User
-    from app.security import hash_password
-
     maker = app.state.sessionmaker
     async with maker() as session:
         user = User(
@@ -111,13 +105,6 @@ async def test_audit_event_defaults_to_skipped_and_unflagged(app):
 
 
 async def test_audit_event_stores_a_verdict(app):
-    import uuid
-
-    from sqlalchemy import select
-
-    from app.models import AuditEvent, User
-    from app.security import hash_password
-
     maker = app.state.sessionmaker
     async with maker() as session:
         user = User(
@@ -141,6 +128,8 @@ async def test_audit_event_stores_a_verdict(app):
         )
         await session.commit()
         event = (await session.execute(select(AuditEvent))).scalars().one()
+        assert event.ml_status == MLStatus.ok
         assert event.ml_score == 0.72
+        assert event.ml_label == "injection"
         assert event.ml_model_version == "stub-tfidf-0.1.0"
         assert event.flagged is True

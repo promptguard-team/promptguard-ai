@@ -11,7 +11,9 @@ from sqlalchemy import (
     String,
     Text,
     Uuid,
+    false,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -47,12 +49,14 @@ class AuditEvent(Base):
     prompt: Mapped[str] = mapped_column(Text)
     response: Mapped[str | None] = mapped_column(Text, default=None)
     ml_status: Mapped[MLStatus] = mapped_column(
-        Enum(MLStatus), default=MLStatus.skipped
+        Enum(MLStatus), default=MLStatus.skipped, server_default=text("'skipped'")
     )
     ml_score: Mapped[float | None] = mapped_column(Float, default=None)
     ml_label: Mapped[str | None] = mapped_column(String(32), default=None)
     ml_model_version: Mapped[str | None] = mapped_column(String(64), default=None)
-    flagged: Mapped[bool] = mapped_column(Boolean, default=False)
+    flagged: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
