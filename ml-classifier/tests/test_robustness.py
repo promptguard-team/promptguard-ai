@@ -56,15 +56,40 @@ async def test_slow_inference_does_not_block_the_event_loop(app, client):
     assert health_elapsed < 0.3
 
 
-async def test_concurrent_requests_are_all_served(client):
+async def test_concurrent_requests_are_all_served(app, client):
+    # A status-code-only check would stay green even if /classify ran fully
+    # serially on the loop -- 20 requests would still each return 200, just
+    # one after another. Timing the whole group is what would have caught
+    # the Argon2 hashing block: each request pays a fixed cost, and the
+    # group's total wall time reveals whether that cost was paid 20 times
+    # over (serialized) or paid once, in parallel (via the worker-thread
+    # pool behind anyio.to_thread).
+    real_predict = app.state.bundle.predict
+
+    def slow_predict(text):
+        time.sleep(0.1)
+        return real_predict(text)
+
+    app.state.bundle.predict = slow_predict
     results = []
 
     async def one():
         resp = await client.post("/classify", json={"text": "hello there"})
         results.append(resp.status_code)
 
-    async with anyio.create_task_group() as tg:
-        for _ in range(20):
-            tg.start_soon(one)
+    started = time.perf_counter()
+    try:
+        async with anyio.create_task_group() as tg:
+            for _ in range(20):
+                tg.start_soon(one)
+    finally:
+        app.state.bundle.predict = real_predict
+    elapsed = time.perf_counter() - started
 
     assert results == [200] * 20
+    # 20 requests x 0.1s through anyio's worker-thread pool (default limiter
+    # of 40 tokens, so all 20 fit at once) run in parallel and land around
+    # 0.1-0.3s. Serialized on the event loop they would take ~2.0s. 1.0s
+    # gives roughly 2x margin over the parallel path while still catching a
+    # fully serialized regression.
+    assert elapsed < 1.0
