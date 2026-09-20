@@ -9,7 +9,6 @@ from app.classifier import ClassifierClient
 from app.config import get_settings
 from app.db import build_engine, build_sessionmaker
 from app.llm import LLMClient
-from app.models import Base
 from app.routers import auth, chat, health
 
 _SENSITIVE_FIELDS = frozenset({"password", "prompt"})
@@ -17,11 +16,11 @@ _SENSITIVE_FIELDS = frozenset({"password", "prompt"})
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Build the engine and create tables on startup, dispose on shutdown."""
+    """Build the engine on startup, dispose on shutdown. Alembic owns the
+    schema; migrations are run before the app starts, not here.
+    """
     settings = get_settings()
     engine = build_engine(settings.database_url)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     app.state.engine = engine
     app.state.sessionmaker = build_sessionmaker(engine)
     app.state.llm_client = LLMClient(
