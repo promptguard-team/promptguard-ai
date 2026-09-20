@@ -54,14 +54,33 @@ def test_block_threshold_below_review_threshold_is_rejected(monkeypatch):
         Settings()
 
 
+@pytest.mark.parametrize(
+    "field", ["classifier_block_threshold", "classifier_review_threshold"]
+)
 @pytest.mark.parametrize("value", ["-0.1", "1.1"])
-def test_thresholds_outside_the_unit_interval_are_rejected(monkeypatch, value):
-    monkeypatch.setenv("CLASSIFIER_BLOCK_THRESHOLD", value)
-    with pytest.raises(ValidationError):
+def test_thresholds_outside_the_unit_interval_are_rejected(monkeypatch, field, value):
+    monkeypatch.setenv(field.upper(), value)
+    # Match the range-check message specifically (`"{field} must be within
+    # [0,1]"`), not just any ValidationError: the block-below-review rule
+    # also mentions classifier_review_threshold in its own message, so a
+    # looser match would pass even if the range check for this field were
+    # deleted from the validator.
+    with pytest.raises(ValidationError, match=rf"{field} must be within \[0,1\]"):
         Settings()
 
 
 async def test_classifier_client_is_available_to_requests(app):
     from app.classifier import ClassifierClient
+    from app.deps import get_classifier_client
 
-    assert isinstance(app.state.classifier_client, ClassifierClient)
+    class _FakeRequest:
+        def __init__(self, app):
+            self.app = app
+
+    dependency_result = get_classifier_client(_FakeRequest(app))
+
+    assert isinstance(dependency_result, ClassifierClient)
+    # Identity, not just type: a dependency that returned some other
+    # ClassifierClient (e.g. a copy-paste of get_llm_client reading the
+    # wrong state attribute) would still pass an isinstance-only check.
+    assert dependency_result is app.state.classifier_client
