@@ -69,9 +69,11 @@ class ModelBundle:
             )
 
         try:
-            # nosec B301 - artifacts enter this repository only through a
-            # reviewed pull request; see the supply-chain note in the design.
-            pipeline = joblib.load(model_path)  # nosec B301
+            # Loading a pickle executes arbitrary code from the file, so
+            # artifacts enter this repository only through a reviewed pull
+            # request. Bandit does not flag joblib.load (B301 covers
+            # pickle/dill/shelve), so there is nothing here to suppress.
+            pipeline = joblib.load(model_path)
         except Exception as exc:  # noqa: BLE001 - any failure here is fatal
             raise ModelLoadError(f"could not load artifact at {model_path}") from exc
 
