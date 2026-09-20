@@ -1,7 +1,14 @@
 from pathlib import Path
 
 from alembic.config import Config
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
+from sqlalchemy import create_engine
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.engine import Inspector
+
+from app.models import Base
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,8 +26,97 @@ def test_there_is_exactly_one_head():
     assert len(script.get_heads()) == 1
 
 
-def test_lifespan_no_longer_creates_tables():
-    # Alembic owns the schema. create_all in the lifespan would silently fail
-    # to add columns to an existing table while appearing to work.
-    source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
-    assert "create_all" not in source
+def test_nothing_in_app_creates_tables():
+    # Alembic owns the schema. create_all anywhere under app/ would silently
+    # fail to add columns to an existing table while appearing to work.
+    # Checking only main.py would miss create_all reintroduced through a
+    # different module main.py imports (e.g. app/db.py), so scan the whole
+    # package.
+    offenders = [
+        str(path.relative_to(ROOT))
+        for path in (ROOT / "app").rglob("*.py")
+        if "create_all" in path.read_text(encoding="utf-8")
+    ]
+    assert not offenders, f"create_all found in: {offenders}"
+
+
+def _revisions_in_upgrade_order(script: ScriptDirectory) -> list:
+    """All revisions from base to head, oldest first.
+
+    ``walk_revisions`` follows ``down_revision`` pointers starting at head,
+    so it yields newest-first; reverse it to get the order ``upgrade()``
+    must be applied in.
+    """
+    revisions = list(script.walk_revisions(base="base", head="head"))
+    revisions.reverse()
+    return revisions
+
+
+def _describe_schema(inspector: Inspector) -> dict:
+    """A dialect-independent-enough snapshot of a live schema: per table,
+    the columns (name -> (type string, nullable)), indexes, primary key,
+    and foreign keys.
+
+    Column types are captured as the string rendering of the *reflected*
+    type, not compared against SQLAlchemy model type objects directly —
+    both schemas being compared here go through this same reflection path,
+    so the comparison is reflected-vs-reflected rather than
+    model-object-vs-reflected-object, which sidesteps dialect-specific
+    reflection quirks (e.g. Enum coming back as VARCHAR) that would
+    otherwise have nothing to do with actual schema drift.
+    """
+    schema = {}
+    for table_name in sorted(inspector.get_table_names()):
+        columns = {
+            col["name"]: (str(col["type"]), bool(col["nullable"]))
+            for col in inspector.get_columns(table_name)
+        }
+        indexes = {
+            (idx["name"], tuple(idx["column_names"]), bool(idx["unique"]))
+            for idx in inspector.get_indexes(table_name)
+        }
+        pk = tuple(
+            sorted(inspector.get_pk_constraint(table_name)["constrained_columns"])
+        )
+        fks = {
+            (
+                tuple(fk["constrained_columns"]),
+                fk["referred_table"],
+                tuple(fk["referred_columns"]),
+            )
+            for fk in inspector.get_foreign_keys(table_name)
+        }
+        schema[table_name] = {
+            "columns": columns,
+            "indexes": indexes,
+            "pk": pk,
+            "fks": fks,
+        }
+    return schema
+
+
+def test_migrations_at_head_reproduce_models():
+    """The durable drift guard: migrations run in order to head must produce
+    exactly the schema `Base.metadata` describes. Unlike checking revision
+    0001 alone, this keeps holding as later revisions are added (e.g. by
+    Task 9), which is exactly when baseline drift would otherwise appear
+    silently — a migration set that disagrees with the models looks correct
+    and fails only later, in a real database.
+    """
+    config = Config(str(ROOT / "alembic.ini"))
+    script = ScriptDirectory.from_config(config)
+
+    migrated_engine = create_engine("sqlite:///:memory:")
+    with migrated_engine.connect() as connection:
+        ctx = MigrationContext.configure(connection)
+        for revision in _revisions_in_upgrade_order(script):
+            with ctx.begin_transaction():
+                with Operations.context(ctx):
+                    revision.module.upgrade()
+        migrated_schema = _describe_schema(sa_inspect(connection))
+
+    model_engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(model_engine)
+    model_schema = _describe_schema(sa_inspect(model_engine))
+
+    assert migrated_schema == model_schema
