@@ -57,3 +57,17 @@ async def client(app):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+@pytest_asyncio.fixture
+async def auth_headers(client):
+    """Register and log in a user, returning its Bearer header."""
+    await client.post(
+        "/auth/register",
+        json={"email": "chatter@example.com", "password": "secret123"},
+    )
+    resp = await client.post(
+        "/auth/login",
+        json={"email": "chatter@example.com", "password": "secret123"},
+    )
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
