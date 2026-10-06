@@ -138,6 +138,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 40s
 
   db_exporter:
     image: prometheuscommunity/postgres-exporter:v0.15.0
