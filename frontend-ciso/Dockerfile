@@ -28,7 +28,7 @@
 # EXPOSE 8080
 # CMD ["nginx", "-g", "daemon off;"]
 
-FROM nginxinc/nginx-unprivileged:alpine
+FROM nginxinc/nginx-unprivileged:alpine AS dev
 
 USER root
 RUN echo '<!DOCTYPE html><html><body style="background-color: #121212; color: #00ff00; font-family: monospace; text-align: center; margin-top: 20%;"><h1>🛡️ CISO Dashboard - Work In Progress (Mock)</h1><p>PromptGuard AI - LLM-Shield</p></body></html>' > /usr/share/nginx/html/index.html
