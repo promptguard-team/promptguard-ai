@@ -53,9 +53,7 @@ jobs:
         run: pytest
 
       - name: Step 4 - DevSecOps Security (SAST)
-        run: |
-          pip install bandit
-          bandit -r app/
+        run: bandit -r app/
 
       - name: Step 5 - Secret Detection
         run: |
