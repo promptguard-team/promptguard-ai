@@ -9,7 +9,7 @@ import base64
 from collections.abc import Callable
 
 _LEET = str.maketrans({"a": "4", "e": "3", "i": "1", "o": "0", "s": "5"})
-_ZERO_WIDTH = "​"
+_ZERO_WIDTH = "\u200b"
 
 
 def _leetspeak(text: str) -> str:

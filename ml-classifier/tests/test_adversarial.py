@@ -22,3 +22,9 @@ def test_spacing_separates_every_character_of_each_word():
 def test_unknown_transform_is_rejected():
     with pytest.raises(KeyError):
         obfuscate("text", "does-not-exist")
+
+
+def test_zero_width_inserts_u200b_and_is_reversible():
+    result = obfuscate("ignore", "zero_width")
+    assert "\u200b" in result
+    assert result.replace("\u200b", "") == "ignore"
