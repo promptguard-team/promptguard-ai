@@ -1,3 +1,4 @@
+import logging
 import uuid
 from dataclasses import dataclass
 
@@ -16,6 +17,8 @@ from app.llm import LLMClient, LLMError
 from app.models import AuditAction, AuditEvent, MLStatus, User
 from app.rules import scan_text
 from app.schemas import ChatRequest, ChatResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
 
@@ -94,9 +97,12 @@ async def chat(
 
     try:
         verdict = await classifier.classify(body.prompt)
-    except ClassifierError:
+    except ClassifierError as exc:
         # Fail open: Layer 1 still ran, and severing all LLM access during our
-        # own outage would drive users around the proxy entirely.
+        # own outage would drive users around the proxy entirely. Log it: a
+        # mistyped CLASSIFIER_URL disables Layer 2 indefinitely, and the audit
+        # table is the only other place this degradation is visible.
+        logger.warning("classifier unavailable, failing open: %s", exc)
         draft.ml_status = MLStatus.unavailable
     else:
         draft.ml_status = MLStatus.ok

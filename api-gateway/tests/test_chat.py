@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from app.models import AuditAction, MLStatus
+from app.models.audit import MAX_ML_LABEL_CHARS, MAX_ML_MODEL_VERSION_CHARS
 from tests.helpers import audit_events, override_classifier, override_llm, scoring
 
 _FAKE_AWS_KEY = "AKIAIOSFODNN7EXAMPLE"  # pragma: allowlist secret
@@ -250,3 +251,45 @@ async def test_exactly_one_audit_row_per_request(
     await client.post("/chat", json={"prompt": prompt}, headers=auth_headers)
     events = await audit_events(app)
     assert len(events) == 1
+
+
+@pytest.mark.parametrize(
+    "label,version",
+    [
+        ("injection" * MAX_ML_LABEL_CHARS, "test-model-0"),
+        ("injection", "v" * (MAX_ML_MODEL_VERSION_CHARS + 1)),
+    ],
+)
+async def test_verdict_too_wide_for_the_audit_columns_fails_open(
+    app, client, auth_headers, label, version
+):
+    # SQLite does not enforce VARCHAR width, so this test cannot observe the
+    # DataError PostgreSQL would raise; what it pins is that such a verdict
+    # never reaches the INSERT at all, and is recorded as an outage.
+    override_classifier(app, scoring(0.95, label=label, version=version))
+    resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
+    # 0.95 would have blocked; an unusable verdict must fail open instead of
+    # being acted on.
+    assert resp.status_code == 200
+    events = await audit_events(app)
+    assert len(events) == 1
+    assert events[0].ml_status == MLStatus.unavailable
+    assert events[0].ml_label is None
+    assert events[0].ml_model_version is None
+
+
+async def test_classifier_outage_is_logged_with_its_cause(
+    app, client, auth_headers, caplog
+):
+    # Fail-open is otherwise invisible outside audit_events: a mistyped
+    # CLASSIFIER_URL would disable Layer 2 indefinitely in silence.
+    def refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    override_classifier(app, refused)
+    with caplog.at_level("WARNING", logger="app.routers.chat"):
+        resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
+    assert resp.status_code == 200
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert warnings, "the fail-open path logged nothing"
+    assert "connection refused" in warnings[0].getMessage()

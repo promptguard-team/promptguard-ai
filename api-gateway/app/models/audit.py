@@ -19,6 +19,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
+# Column widths the gateway also enforces before an INSERT is attempted: on
+# PostgreSQL an over-long value raises DataError inside the audit write, which
+# on the allowed path happens *after* the prompt has reached the provider.
+# app/classifier.py imports these, so the two cannot drift apart.
+MAX_ML_LABEL_CHARS = 32
+MAX_ML_MODEL_VERSION_CHARS = 64
+
 
 class AuditAction(str, enum.Enum):
     """Outcome of a proxied chat request."""
@@ -52,8 +59,12 @@ class AuditEvent(Base):
         Enum(MLStatus), default=MLStatus.skipped, server_default=text("'skipped'")
     )
     ml_score: Mapped[float | None] = mapped_column(Float, default=None)
-    ml_label: Mapped[str | None] = mapped_column(String(32), default=None)
-    ml_model_version: Mapped[str | None] = mapped_column(String(64), default=None)
+    ml_label: Mapped[str | None] = mapped_column(
+        String(MAX_ML_LABEL_CHARS), default=None
+    )
+    ml_model_version: Mapped[str | None] = mapped_column(
+        String(MAX_ML_MODEL_VERSION_CHARS), default=None
+    )
     flagged: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false()
     )

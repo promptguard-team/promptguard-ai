@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from app.classifier import ClassifierClient, ClassifierError
+from app.models.audit import MAX_ML_LABEL_CHARS, MAX_ML_MODEL_VERSION_CHARS
 
 
 def _client(handler, **kwargs):
@@ -94,3 +95,38 @@ async def test_classify_accepts_integer_scores():
 
     verdict = await _client(integral).classify("hello")
     assert verdict.score == 0.0
+
+
+def _payload(label="clean", version="stub-0"):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"label": label, "score": 0.5, "model_version": version}
+        )
+
+    return handler
+
+
+@pytest.mark.parametrize(
+    "label,version",
+    [
+        ("x" * (MAX_ML_LABEL_CHARS + 1), "stub-0"),
+        ("clean", "v" * (MAX_ML_MODEL_VERSION_CHARS + 1)),
+    ],
+)
+async def test_classify_rejects_strings_wider_than_the_audit_columns(label, version):
+    # audit_events.ml_label is String(32) and ml_model_version String(64). On
+    # PostgreSQL an over-long value raises DataError inside the audit write,
+    # which on the allowed path runs only after the prompt has already been
+    # sent to the provider. Rejecting here routes it into fail-open instead.
+    with pytest.raises(ClassifierError):
+        await _client(_payload(label, version)).classify("hello")
+
+
+async def test_classify_accepts_strings_exactly_at_the_column_width():
+    # The limits are inclusive: a label of exactly 32 characters fits the
+    # column, so rejecting it would throw away a usable verdict.
+    label = "x" * MAX_ML_LABEL_CHARS
+    version = "v" * MAX_ML_MODEL_VERSION_CHARS
+    verdict = await _client(_payload(label, version)).classify("hello")
+    assert verdict.label == label
+    assert verdict.model_version == version

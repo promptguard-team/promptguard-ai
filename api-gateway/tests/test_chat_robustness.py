@@ -19,7 +19,10 @@ async def test_maximum_length_prompt_completes_promptly(app, client, auth_header
     started = time.perf_counter()
     resp = await client.post("/chat", json={"prompt": prompt}, headers=auth_headers)
     elapsed = time.perf_counter() - started
-    assert resp.status_code in {200, 403}
+    # This prompt matches no rule today, so the whole path (rules, classifier,
+    # provider, audit) runs. Accepting 403 as well would let a rule change
+    # quietly reduce this to a test of the rule engine alone.
+    assert resp.status_code == 200
     assert elapsed < 2.0
 
 
@@ -107,6 +110,70 @@ async def test_slow_classifier_does_not_exceed_its_timeout_budget(
     assert handlers
     # The timeout fires at 0.2s; an ignored timeout would wait the full 1.0s.
     assert elapsed < answer_delay * 0.75
+    assert resp.status_code == 200
+    events = await audit_events(app)
+    assert len(events) == 1
+    assert events[0].ml_status == MLStatus.unavailable
+
+
+async def test_dribbling_classifier_is_cut_off_by_the_total_budget(
+    app, client, auth_headers
+):
+    # The timeout is a budget for the whole call, not a per-read gap. This
+    # server answers with valid headers and then sends the body one byte at a
+    # time, well inside any read timeout, so only a total deadline can stop it.
+    # Without one, /chat waits out the full dribble and acts on the verdict.
+    budget = 0.3
+    byte_interval = 0.05
+    body = b'{"label": "injection", "score": 0.99, "model_version": "x"}'
+    dribble_seconds = len(body) * byte_interval
+    assert dribble_seconds > budget * 4
+
+    handlers: set[asyncio.Task] = set()
+
+    async def dribbling_server(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        handlers.add(asyncio.current_task())
+        await reader.read(65536)
+        writer.write(
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+            + f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+        )
+        try:
+            await writer.drain()
+            for byte in body:
+                writer.write(bytes([byte]))
+                await writer.drain()
+                await asyncio.sleep(byte_interval)
+        except ConnectionError:
+            pass
+        writer.close()
+
+    server = await asyncio.start_server(dribbling_server, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    try:
+        await app.state.classifier_client.aclose()
+        app.state.classifier_client = ClassifierClient(
+            base_url=f"http://127.0.0.1:{port}", timeout_seconds=budget
+        )
+        started = time.perf_counter()
+        resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
+        elapsed = time.perf_counter() - started
+    finally:
+        await app.state.classifier_client.aclose()
+        server.close()
+        for task in handlers:
+            task.cancel()
+        await asyncio.gather(*handlers, return_exceptions=True)
+        await server.wait_closed()
+
+    # The request really reached the dribbling server rather than failing fast
+    # for some unrelated reason.
+    assert handlers
+    assert elapsed < dribble_seconds / 2
+    # A score of 0.99 would have blocked; the point is that the verdict never
+    # arrived and the request failed open instead of being held open.
     assert resp.status_code == 200
     events = await audit_events(app)
     assert len(events) == 1
