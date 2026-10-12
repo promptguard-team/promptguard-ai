@@ -32,6 +32,7 @@ FROM base AS prod
 
 COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
 COPY --chown=appuser:appuser app ./app
+COPY --chown=appuser:appuser models ./models
 
 USER appuser
 

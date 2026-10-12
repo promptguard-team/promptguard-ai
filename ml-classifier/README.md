@@ -117,10 +117,8 @@ Check your delivery before opening the pull request: start the service with
 `GET /health`. A bad artifact fails at startup with a message naming the
 problem; a good one reports your `model_version` and `"stub": false`.
 
-**Deployment caveat.** The `prod` stage of `Dockerfile` copies only `app/`, so
-a production image currently contains no `models/` directory. Docker Compose
-bind-mounts `./ml-classifier` and so works; a production build needs the
-artifact baked in or mounted. Fix this together with the first real delivery.
+The `prod` image bakes in everything under `models/`, so a delivery is
+shipped by the same pull request that adds the artifact.
 
 ## Evaluation
 
