@@ -7,7 +7,7 @@ The project is based on a microservices architecture (Monorepo) targeted for dep
 * **Frontend Chat:** React (User interface for prompts)
 * **Frontend CISO:** React (Analytics dashboard for security)
 * **API Gateway Proxy:** FastAPI (Authorization gateway and LLM proxy)
-* **ML Classifier:** FastAPI + PyTorch (Query/response classifier)
+* **ML Classifier:** FastAPI + scikit-learn (prompt injection scoring; PyTorch arrives with the stage 2 transformer)
 * **Database:** PostgreSQL
 
 ## Repository Structure
@@ -40,9 +40,24 @@ You do not need a local k8s cluster for development. We use Docker.
 * `POST /auth/login` — exchange credentials for a JWT access token.
 * `GET /auth/me` — return the authenticated user's own account.
 * `POST /chat` — proxy a prompt to the LLM provider; blocks and audits any
-  request or reply containing a detected credential or PESEL.
+  request or reply containing a detected credential or PESEL. After the rule
+  engine, the prompt is scored by the ML Classifier (Layer 2): at or above
+  `CLASSIFIER_BLOCK_THRESHOLD` it is blocked, at or above
+  `CLASSIFIER_REVIEW_THRESHOLD` it is allowed but flagged for review. If the
+  classifier is unavailable the request fails open and the audit row records
+  `ml_status = unavailable`.
 * `GET /health` — liveness check.
 * `GET /health/db` — database connectivity check.
+
+## ML Classifier Endpoints
+* `POST /classify` — score one prompt; returns `label`, `score` (P(injection))
+  and `model_version`. It returns a measurement, never a verdict.
+* `GET /health` — readiness probe; reports `model_version` and whether the
+  served artifact is a stub.
+
+The shipped model is a labelled stub, not a security control. See
+[ml-classifier/README.md](ml-classifier/README.md) for the artifact contract
+and how to deliver a real model.
 
 ## How to Contribute
 Please read the [CONTRIBUTING.md](.github/CONTRIBUTING.md) file before writing your first line of code!
