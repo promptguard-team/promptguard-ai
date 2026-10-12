@@ -83,6 +83,32 @@ Used in the `frontend-chat/` and `frontend-ciso/` directories.
 npx prettier --write .
 ```
 
+### 🗄️ Alembic (Database Migrations)
+
+- **Problem:** `docker compose up` keeps restarting the `api` container, and the
+  logs say that an object already exists (e.g. `type "userrole" already exists`).
+  - **Cause:** your `db_data` volume predates Alembic — the tables were created
+    by the old startup code, so the baseline migration tries to create them
+    again. The volume survives `docker compose down`, so this hits almost every
+    machine that ran the project before.
+  - **Solution:** mark the baseline as already applied (this writes only the
+    revision marker, it touches no tables), then start again:
+
+```bash
+docker compose run --rm api alembic stamp 0001
+docker compose up -d api
+```
+
+- **Problem:** the gateway exits at startup with
+  `database schema is at revision ... but the migrations' head is ...`.
+  - **Solution:** the database is behind the migrations. Run them:
+
+```bash
+docker compose run --rm api alembic upgrade head
+```
+
+---
+
 ### 🔐 Detect-secrets (Secret Leak Prevention)
 
 - **Problem:** Pre-commit blocks a file, claiming it contains a password or token, but it is a false-positive (e.g., a fake hash in unit tests).
