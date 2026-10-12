@@ -1,6 +1,7 @@
 import httpx
 import pytest
 
+from app.config import get_settings
 from app.models import AuditAction, MLStatus
 from app.models.audit import MAX_ML_LABEL_CHARS, MAX_ML_MODEL_VERSION_CHARS
 from tests.helpers import audit_events, override_classifier, override_llm, scoring
@@ -251,6 +252,46 @@ async def test_exactly_one_audit_row_per_request(
     await client.post("/chat", json={"prompt": prompt}, headers=auth_headers)
     events = await audit_events(app)
     assert len(events) == 1
+
+
+async def test_score_exactly_at_the_block_threshold_is_blocked(
+    app, client, auth_headers
+):
+    # The thresholds are inclusive ("at or above"), and the decision boundary
+    # is the one value the scenario scores (0.95/0.70/0.05) never touch:
+    # turning either `>=` into `>` leaves all of them passing.
+    assert get_settings().classifier_block_threshold == 0.90
+    override_classifier(app, scoring(0.90))
+    resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
+    assert resp.status_code == 403
+    events = await audit_events(app)
+    assert events[0].action == AuditAction.blocked_prompt
+    assert events[0].ml_score == 0.90
+
+
+async def test_score_exactly_at_the_review_threshold_is_allowed_and_flagged(
+    app, client, auth_headers
+):
+    assert get_settings().classifier_review_threshold == 0.60
+    override_classifier(app, scoring(0.60))
+    resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
+    assert resp.status_code == 200
+    events = await audit_events(app)
+    assert events[0].action == AuditAction.allowed
+    assert events[0].flagged is True
+
+
+async def test_score_just_below_the_review_threshold_is_not_flagged(
+    app, client, auth_headers
+):
+    # The negative half of the boundary: without it, `score >= 0` would also
+    # satisfy the two cases above.
+    override_classifier(app, scoring(0.5999))
+    resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
+    assert resp.status_code == 200
+    events = await audit_events(app)
+    assert events[0].action == AuditAction.allowed
+    assert events[0].flagged is False
 
 
 @pytest.mark.parametrize(
