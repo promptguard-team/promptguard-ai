@@ -62,6 +62,19 @@ audit the prompts it forwards.
   revisions then apply on top of it as usual. To throw the old data away
   instead, run `docker compose down -v` and start again.
 
+**Known limitation — concurrent replicas.** Every gateway container runs
+`alembic upgrade head` on startup, and Alembic takes no advisory lock, so on a
+first deploy two replicas can run the same migration at once and one of them
+loses: it fails, and the startup check then refuses to serve a half-applied
+schema, so the container exits non-zero and the orchestrator restarts it. By
+then the winner has finished and the restarted replica finds the schema already
+at head, so the deploy converges on its own — the failure is loud, fail-closed
+and self-healing, not silent. A container restarting once during a schema change
+is therefore expected. Removing the restart means taking the upgrade out of the
+replicas: a one-shot migration job (a Kubernetes Job, or a dedicated compose
+service the others wait on), or wrapping the upgrade in a `pg_advisory_lock`.
+Neither is implemented.
+
 ## API Gateway Endpoints
 * `POST /auth/register` — create an account (email, password).
 * `POST /auth/login` — exchange credentials for a JWT access token.
