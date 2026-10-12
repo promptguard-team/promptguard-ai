@@ -8,7 +8,7 @@
     "injection"
   ],
   "metrics": {
-    "note": "Meaningless. Fitted on 40 hand-written examples with no held-out set. Use scripts/evaluate.py against a real artifact for numbers."
+    "note": "Meaningless. Fitted on 40 hand-written examples with no held-out set. Use `python -m scripts.evaluate` against a real artifact for numbers."
   },
   "environment": {
     "scikit-learn": "1.7.2",

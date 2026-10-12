@@ -93,7 +93,7 @@ def main() -> None:
             "note": (
                 "Meaningless. Fitted on "
                 f"{len(texts)} hand-written examples with no held-out set. "
-                "Use scripts/evaluate.py against a real artifact for numbers."
+                "Use `python -m scripts.evaluate` against a real artifact for numbers."
             )
         },
         "environment": {
