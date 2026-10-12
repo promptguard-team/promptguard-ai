@@ -86,11 +86,11 @@ async def test_slow_classifier_does_not_exceed_its_timeout_budget(
 
     server = await asyncio.start_server(slow_server, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
-    await app.state.classifier_client.aclose()
-    app.state.classifier_client = ClassifierClient(
-        base_url=f"http://127.0.0.1:{port}", timeout_seconds=0.2
-    )
     try:
+        await app.state.classifier_client.aclose()
+        app.state.classifier_client = ClassifierClient(
+            base_url=f"http://127.0.0.1:{port}", timeout_seconds=0.2
+        )
         started = time.perf_counter()
         resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
         elapsed = time.perf_counter() - started
@@ -102,6 +102,9 @@ async def test_slow_classifier_does_not_exceed_its_timeout_budget(
         await asyncio.gather(*handlers, return_exceptions=True)
         await server.wait_closed()
 
+    # A refused or proxied connection would also return fast with `unavailable`,
+    # so prove the request actually reached the server and the timeout fired.
+    assert handlers
     # The timeout fires at 0.2s; an ignored timeout would wait the full 1.0s.
     assert elapsed < answer_delay * 0.75
     assert resp.status_code == 200
