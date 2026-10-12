@@ -1,0 +1,6 @@
+# Files consumed by Docker and by /bin/sh must keep LF in the working tree
+# regardless of core.autocrlf: a trailing CR makes every .dockerignore pattern
+# match nothing, and turns a shebang into "/bin/sh: not found".
+*.sh text eol=lf
+.dockerignore text eol=lf
+Dockerfile text eol=lf

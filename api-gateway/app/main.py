@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.classifier import ClassifierClient
 from app.config import get_settings
-from app.db import build_engine, build_sessionmaker
+from app.db import build_engine, build_sessionmaker, verify_schema_is_current
 from app.llm import LLMClient
 from app.routers import auth, chat, health
 
@@ -17,10 +17,16 @@ _SENSITIVE_FIELDS = frozenset({"password", "prompt"})
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Build the engine on startup, dispose on shutdown. Alembic owns the
-    schema; migrations are run before the app starts, not here.
+    schema; migrations are run before the app starts, not here — and this
+    refuses to start if they have not been.
     """
     settings = get_settings()
     engine = build_engine(settings.database_url)
+    try:
+        await verify_schema_is_current(engine)
+    except BaseException:
+        await engine.dispose()
+        raise
     app.state.engine = engine
     app.state.sessionmaker = build_sessionmaker(engine)
     app.state.llm_client = LLMClient(
