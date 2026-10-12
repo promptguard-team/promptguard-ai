@@ -46,16 +46,14 @@ jobs:
 
       - name: Step 2 - Code Quality (Linters and Formatters)
         run: |
-          ruff check app/ tests/
-          ruff format --check app/ tests/
+          ruff check app/ tests/ alembic/
+          ruff format --check app/ tests/ alembic/
 
       - name: Step 3 - Unit Tests
         run: pytest
 
       - name: Step 4 - DevSecOps Security (SAST)
-        run: |
-          pip install bandit
-          bandit -r app/
+        run: bandit -r app/ alembic/
 
       - name: Step 5 - Secret Detection
         run: |
