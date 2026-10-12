@@ -7,6 +7,9 @@ import joblib
 import sklearn
 
 
+MAX_MODEL_VERSION_CHARS = 64
+
+
 class ModelLoadError(RuntimeError):
     """The model artifact is missing, unreadable, or failed validation."""
 
@@ -64,6 +67,14 @@ class ModelBundle:
             # this must fail at load time rather than 500 on each call.
             raise ModelLoadError(
                 f"model card at {card_path} is missing 'model_version'"
+            )
+        if len(model_version) > MAX_MODEL_VERSION_CHARS:
+            # The gateway stores this in audit_events.ml_model_version
+            # (String(64)); a longer value would pass here and then fail every
+            # /chat audit insert.
+            raise ModelLoadError(
+                f"model_version in {card_path} is {len(model_version)} "
+                f"characters; the limit is {MAX_MODEL_VERSION_CHARS}"
             )
 
         declared = card.get("environment", {}).get("scikit-learn")

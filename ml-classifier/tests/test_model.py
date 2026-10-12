@@ -99,3 +99,13 @@ def test_load_refuses_card_without_model_version(tmp_path):
     card_path.write_text(json.dumps(card), encoding="utf-8")
     with pytest.raises(ModelLoadError, match="model_version"):
         ModelBundle.load(path)
+
+
+def test_load_refuses_overlong_model_version(tmp_path):
+    # The gateway stores model_version in a String(64) audit column; a longer
+    # one would pass /classify and then fail every /chat audit insert.
+    path = _write_artifact(
+        tmp_path, ["injection", "clean"], {"model_version": "v" * 65}
+    )
+    with pytest.raises(ModelLoadError, match="65 characters.*limit is 64"):
+        ModelBundle.load(path)

@@ -92,8 +92,8 @@ exists because its absence produces a specific failure.
    }
    ```
 
-   What the service **enforces**: `model_version` (non-empty string; it is
-   written to every audit row, up to 64 characters fit there) and
+   What the service **enforces**: `model_version` (non-empty string of at most 64
+   characters, rejected at load otherwise; it is written to every audit row) and
    `environment.scikit-learn`. `stub` is optional and defaults to `false`.
    Everything else is provenance for humans and is not validated, but fill it in
    honestly — the card is the only record of what the model was trained on.
@@ -112,7 +112,8 @@ exists because its absence produces a specific failure.
    pickle and Git LFS for the weights — a 250 MB binary enters git history
    permanently.
 
-Check your delivery before opening the pull request: start the service with
+Check your delivery before opening the pull request. From the `ml-classifier/`
+directory, with `pip install -r requirements.txt` done, start the service with
 `MODEL_PATH` pointing at it (`uvicorn app.main:app --port 7000`) and call
 `GET /health`. A bad artifact fails at startup with a message naming the
 problem; a good one reports your `model_version` and `"stub": false`.
@@ -126,6 +127,9 @@ Model quality is never asserted in CI: metrics depend on an artifact that
 changes, so a pinned assertion either breaks constantly or proves nothing.
 Measure it here instead. Run from the `ml-classifier/` directory (the scripts
 import `app` and `scripts`, so `python scripts/evaluate.py` will not work):
+
+No evaluation set is committed (there is no `ml-classifier/data/`); you supply
+`eval.csv` yourself.
 
 ```bash
 python -m scripts.evaluate models/<artifact>.joblib path/to/eval.csv
@@ -150,5 +154,7 @@ Know the limits of the adversarial experiment before quoting it: it applies
 every transform to all injection rows rather than only those the model detects
 at baseline (misses dilute the drop); its tables contain no clean rows, so their
 precision and FPR columns are trivially 1 and 0; and it has no homoglyph,
-paraphrase, translation, typo or payload-splitting variants. These are tracked
-as follow-ups.
+paraphrase, translation, typo or payload-splitting variants; and
+the threshold grid is coarse (no counts, and it jumps from 0.90 to 0.95), so
+for a stringent false-positive target compute the threshold yourself from the
+raw scores.
