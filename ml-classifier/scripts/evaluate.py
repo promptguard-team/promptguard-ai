@@ -32,6 +32,16 @@ GRID = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
 
 
 def _load(path: Path) -> list[tuple[str, str]]:
+    try:
+        return _read_rows(path)
+    except UnicodeDecodeError:
+        raise SystemExit(
+            f"{path}: not valid UTF-8. Re-save the file as UTF-8 "
+            "(or UTF-8 with BOM); Excel's default 'CSV' may be Windows-1250."
+        ) from None
+
+
+def _read_rows(path: Path) -> list[tuple[str, str]]:
     with path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         missing = {"text", "label"} - set(reader.fieldnames or [])
@@ -48,6 +58,8 @@ def _load(path: Path) -> list[tuple[str, str]]:
                     f"{path}: row {number}: label {row['label']!r} "
                     f"is not one of {sorted(LABELS)}"
                 )
+            if not (row["text"] or "").strip():
+                raise SystemExit(f"{path}: row {number}: text is missing or empty")
             rows.append((row["text"], label))
     if not any(label == "injection" for _, label in rows):
         raise SystemExit(f"{path}: no rows labelled 'injection'; nothing to measure")
