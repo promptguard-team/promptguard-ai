@@ -12,8 +12,8 @@ def _write(tmp_path, content: bytes):
 
 
 def test_valid_csv_is_loaded_and_labels_normalised(tmp_path):
-    path = _write(tmp_path, b"text,label\nattack,Injection \nhello,clean\n")
-    assert _load(path) == [("attack", "injection"), ("hello", "clean")]
+    path = _write(tmp_path, b"text,label\n  attack \t,Injection \nhello,clean\n")
+    assert _load(path) == [("  attack \t", "injection"), ("hello", "clean")]
 
 
 def test_utf8_bom_header_is_accepted(tmp_path):
@@ -44,6 +44,14 @@ def test_empty_or_missing_text_names_row(tmp_path, line):
     with pytest.raises(SystemExit) as exc:
         _load(path)
     assert "row 3" in str(exc.value)
+
+
+def test_short_row_missing_text_field_is_rejected_not_crashed(tmp_path):
+    path = _write(tmp_path, b"label,text\ninjection\n")
+    with pytest.raises(SystemExit) as exc:
+        _load(path)
+    assert "row 2" in str(exc.value)
+    assert "text is missing or empty" in str(exc.value)
 
 
 def test_set_without_injection_rows_is_rejected(tmp_path):
