@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from alembic.config import Config
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
@@ -38,6 +40,33 @@ def test_nothing_in_app_creates_tables():
         if "create_all" in path.read_text(encoding="utf-8")
     ]
     assert not offenders, f"create_all found in: {offenders}"
+
+
+def test_env_does_not_put_the_database_url_through_configparser():
+    # `Config.set_main_option` stores the value in a ConfigParser, which treats
+    # `%` as interpolation syntax and raises on `set` -- before any migration
+    # runs. A password containing a percent sign, including the URL-encoded
+    # `p%40ss` that is the correct way to carry an `@`, would therefore stop
+    # the production container from starting, with an error naming neither the
+    # password nor the setting. env.py builds the engine from Settings instead.
+    # Comments are stripped first: env.py explains this hazard by name, and an
+    # explanation of why we avoid a call must not look like the call.
+    code = "\n".join(
+        line
+        for line in (ROOT / "alembic" / "env.py")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    assert "set_main_option" not in code
+
+    # Demonstrate the hazard is real rather than theoretical, so a future
+    # reader can see why the structural check above exists.
+    config = Config(str(ROOT / "alembic.ini"))
+    with pytest.raises(ValueError, match="interpolation"):
+        config.set_main_option(
+            "sqlalchemy.url", "postgresql+asyncpg://u:p%40ss@db:5432/x"
+        )
 
 
 def _revisions_in_upgrade_order(script: ScriptDirectory) -> list:
