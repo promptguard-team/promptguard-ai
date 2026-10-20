@@ -98,3 +98,29 @@ async def test_stats_naive_datetime_is_422(client, ciso_headers):
     )
 
     assert resp.status_code == 422
+
+
+async def test_stats_window_applies_to_flagged_and_ml_unavailable(
+    app, client, chatter, ciso_headers
+):
+    # Each counter has one event inside the window and one outside it, so a
+    # query that drops the window from either counter is off by one.
+    for hours in (0, 3):
+        at = TEN_UTC + timedelta(hours=hours)
+        await add_event(app, user_id=chatter, created_at=at, flagged=True)
+        await add_event(
+            app, user_id=chatter, created_at=at, ml_status=MLStatus.unavailable
+        )
+
+    stats = await _stats(
+        client,
+        ciso_headers,
+        **{"from": "2026-10-20T10:00:00Z", "to": "2026-10-20T12:00:00Z"},
+    )
+
+    assert stats == {
+        "total": 2,
+        "by_action": {**EMPTY_BY_ACTION, "allowed": 2},
+        "flagged": 1,
+        "ml_unavailable": 1,
+    }
