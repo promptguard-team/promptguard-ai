@@ -1,15 +1,17 @@
 import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TypeVar
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import AwareDatetime, BaseModel
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.deps import require_ciso
-from app.models import AuditEvent, User
-from app.schemas import AuditEventDetail
+from app.models import AuditAction, AuditEvent, MLStatus, User
+from app.schemas import AuditEventDetail, AuditEventPage, AuditEventSummary
 
 router = APIRouter(
     prefix="/audit", tags=["audit"], dependencies=[Depends(require_ciso)]
@@ -28,6 +30,87 @@ def _to_schema(schema: type[SchemaT], event: AuditEvent, user_email: str) -> Sch
         if name != "user_email"
     }
     return schema(**values, user_email=user_email)
+
+
+@dataclass(frozen=True)
+class TimeWindow:
+    """A half-open [start, end) range on created_at, in UTC; None is unbounded."""
+
+    start: datetime | None
+    end: datetime | None
+
+
+def time_window(
+    from_: AwareDatetime | None = Query(None, alias="from"),
+    to: AwareDatetime | None = Query(None),
+) -> TimeWindow:
+    """Parse ?from=&to=. AwareDatetime already rejects naive input with a 422:
+    the dashboard runs in Europe/Warsaw and the column is UTC, so guessing
+    either way would silently shift every window.
+    """
+    if from_ is not None and to is not None and from_ >= to:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="'from' must be earlier than 'to'",
+        )
+    # Converted before querying because SQLite stores the wall-clock digits and
+    # drops the offset, so a +02:00 bound would compare as if it were UTC.
+    return TimeWindow(
+        start=from_.astimezone(timezone.utc) if from_ is not None else None,
+        end=to.astimezone(timezone.utc) if to is not None else None,
+    )
+
+
+def _window_clauses(window: TimeWindow) -> list[ColumnElement[bool]]:
+    clauses = []
+    if window.start is not None:
+        clauses.append(AuditEvent.created_at >= window.start)
+    if window.end is not None:
+        clauses.append(AuditEvent.created_at < window.end)
+    return clauses
+
+
+@router.get("/events", response_model=AuditEventPage)
+async def list_events(
+    action: list[AuditAction] | None = Query(None),
+    flagged: bool | None = None,
+    ml_status: MLStatus | None = None,
+    user_id: uuid.UUID | None = None,
+    window: TimeWindow = Depends(time_window),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_session),
+) -> AuditEventPage:
+    """List audit event metadata, newest first. Never includes prompt text."""
+    clauses = _window_clauses(window)
+    if action:
+        clauses.append(AuditEvent.action.in_(action))
+    if flagged is not None:
+        clauses.append(AuditEvent.flagged == flagged)
+    if ml_status is not None:
+        clauses.append(AuditEvent.ml_status == ml_status)
+    if user_id is not None:
+        clauses.append(AuditEvent.user_id == user_id)
+
+    total = await session.scalar(
+        select(func.count()).select_from(AuditEvent).where(*clauses)
+    )
+    result = await session.execute(
+        select(AuditEvent, User.email)
+        .join(User, AuditEvent.user_id == User.id)
+        .where(*clauses)
+        # id breaks ties: rows with equal created_at would otherwise come back
+        # in an unspecified order and could appear on two pages or on none.
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return AuditEventPage(
+        items=[_to_schema(AuditEventSummary, event, email) for event, email in result],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/events/{event_id}", response_model=AuditEventDetail)

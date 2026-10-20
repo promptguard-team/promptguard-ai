@@ -97,3 +97,12 @@ class AuditEventDetail(AuditEventSummary):
 
     prompt: str
     response: str | None
+
+
+class AuditEventPage(BaseModel):
+    """One page of audit event metadata."""
+
+    items: list[AuditEventSummary]
+    total: int
+    limit: int
+    offset: int
