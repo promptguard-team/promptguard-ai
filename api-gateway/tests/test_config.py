@@ -84,3 +84,13 @@ async def test_classifier_client_is_available_to_requests(app):
     # ClassifierClient (e.g. a copy-paste of get_llm_client reading the
     # wrong state attribute) would still pass an isinstance-only check.
     assert dependency_result is app.state.classifier_client
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_non_positive_classifier_timeout_is_rejected(monkeypatch, value):
+    # anyio.fail_after(0) raises before the request is sent, so every call
+    # would become a recorded fail-open: Layer 2 off, audit full of
+    # ml_status=unavailable, and nothing anywhere reporting a problem.
+    monkeypatch.setenv("CLASSIFIER_TIMEOUT_SECONDS", value)
+    with pytest.raises(ValidationError, match="classifier_timeout_seconds"):
+        Settings()

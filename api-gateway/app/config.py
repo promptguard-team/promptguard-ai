@@ -38,10 +38,14 @@ class Settings(BaseSettings):
         )
 
     @model_validator(mode="after")
-    def _check_thresholds(self) -> "Settings":
-        """Reject a threshold configuration that would silently collapse the
-        review band: if block < review, everything flagged for review would
-        already have been blocked, with no error to signal the mistake.
+    def _check_classifier_settings(self) -> "Settings":
+        """Reject configurations that would silently disable Layer 2.
+
+        If block < review, everything flagged for review would already have
+        been blocked and the middle band vanishes. A non-positive timeout is
+        worse still: the deadline fires before the request is even sent, so
+        every call becomes a recorded fail-open and the system looks healthy
+        while nothing is ever scored.
         """
         for name, value in (
             ("classifier_block_threshold", self.classifier_block_threshold),
@@ -52,6 +56,11 @@ class Settings(BaseSettings):
         if self.classifier_block_threshold < self.classifier_review_threshold:
             raise ValueError(
                 "classifier_block_threshold must be >= classifier_review_threshold"
+            )
+        if self.classifier_timeout_seconds <= 0:
+            raise ValueError(
+                "classifier_timeout_seconds must be greater than 0, got "
+                f"{self.classifier_timeout_seconds}"
             )
         return self
 
