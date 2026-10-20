@@ -1,7 +1,7 @@
 # Base
 FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS base
 
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel>=0.46.2 jaraco.context>=6.1.0
+RUN pip install --no-cache-dir --upgrade pip setuptools "wheel>=0.46.2" "jaraco.context>=6.1.0"
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
@@ -13,7 +13,7 @@ FROM base AS builder
 
 RUN python -m venv /opt/venv
 
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel>=0.46.2 jaraco.context>=6.1.0
+RUN pip install --no-cache-dir --upgrade pip setuptools "wheel>=0.46.2" "jaraco.context>=6.1.0"
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
