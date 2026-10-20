@@ -81,6 +81,16 @@ def _revisions_in_upgrade_order(script: ScriptDirectory) -> list:
     return revisions
 
 
+def _migrate_to_head(connection) -> None:
+    """Apply every revision's upgrade(), oldest first, on `connection`."""
+    script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
+    ctx = MigrationContext.configure(connection)
+    for revision in _revisions_in_upgrade_order(script):
+        with ctx.begin_transaction():
+            with Operations.context(ctx):
+                revision.module.upgrade()
+
+
 def _describe_schema(inspector: Inspector) -> dict:
     """A dialect-independent-enough snapshot of a live schema: per table,
     the columns (name -> (type string, nullable)), indexes, primary key,
@@ -143,16 +153,9 @@ def test_migrations_at_head_reproduce_models():
       constraint, so adding, removing, or renaming an enum member can leave
       this test green even though PostgreSQL's real enum type would differ.
     """
-    config = Config(str(ROOT / "alembic.ini"))
-    script = ScriptDirectory.from_config(config)
-
     migrated_engine = create_engine("sqlite:///:memory:")
     with migrated_engine.connect() as connection:
-        ctx = MigrationContext.configure(connection)
-        for revision in _revisions_in_upgrade_order(script):
-            with ctx.begin_transaction():
-                with Operations.context(ctx):
-                    revision.module.upgrade()
+        _migrate_to_head(connection)
         migrated_schema = _describe_schema(sa_inspect(connection))
 
     model_engine = create_engine("sqlite:///:memory:")
@@ -160,3 +163,13 @@ def test_migrations_at_head_reproduce_models():
     model_schema = _describe_schema(sa_inspect(model_engine))
 
     assert migrated_schema == model_schema
+
+
+def test_head_indexes_audit_created_at():
+    engine = create_engine("sqlite:///:memory:")
+    with engine.connect() as connection:
+        _migrate_to_head(connection)
+        indexes = sa_inspect(connection).get_indexes("audit_events")
+    assert {(idx["name"], tuple(idx["column_names"])) for idx in indexes} >= {
+        ("ix_audit_events_created_at", ("created_at",))
+    }
