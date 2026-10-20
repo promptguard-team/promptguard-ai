@@ -1,13 +1,21 @@
 import json
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import joblib
 import sklearn
+from sklearn.exceptions import InconsistentVersionWarning
 
 
 MAX_MODEL_VERSION_CHARS = 64
+
+# The gateway scores a prompt with P(injection) alone. A model carrying any
+# other class would still load, but the probability mass on that class would
+# count towards neither threshold, so an attack it recognised could score low
+# and pass. The contract is binary; enforce it.
+REQUIRED_CLASSES = frozenset({"clean", "injection"})
 
 
 class ModelLoadError(RuntimeError):
@@ -29,8 +37,19 @@ class ModelBundle:
         self._pipeline = pipeline
         self._card = card
         classes = [str(c) for c in pipeline.classes_]
-        if "injection" not in classes:
-            raise ModelLoadError(f"model classes {classes} do not include 'injection'")
+        if set(classes) != REQUIRED_CLASSES:
+            raise ModelLoadError(
+                f"model classes {sorted(classes)} must be exactly "
+                f"{sorted(REQUIRED_CLASSES)}"
+            )
+        declared = card.get("classes")
+        if declared is not None and set(map(str, declared)) != set(classes):
+            # A card that disagrees with its own artifact is a packaging error,
+            # and every other field is trusted on the card's word alone.
+            raise ModelLoadError(
+                f"model card declares classes {sorted(map(str, declared))} "
+                f"but the artifact has {sorted(classes)}"
+            )
         self._classes = classes
         self._injection_idx = classes.index("injection")
 
@@ -90,7 +109,20 @@ class ModelBundle:
             # artifacts enter this repository only through a reviewed pull
             # request. Bandit does not flag joblib.load (B301 covers
             # pickle/dill/shelve), so there is nothing here to suppress.
-            pipeline = joblib.load(model_path)
+            with warnings.catch_warnings():
+                # The check above compares the card's *claim* about
+                # scikit-learn. This compares the artifact itself: unpickling a
+                # model built by another version raises
+                # InconsistentVersionWarning, which is only a warning under
+                # uvicorn and would otherwise pass a copied-and-pasted card.
+                warnings.simplefilter("error", InconsistentVersionWarning)
+                pipeline = joblib.load(model_path)
+        except InconsistentVersionWarning as exc:
+            raise ModelLoadError(
+                f"artifact at {model_path} was built with scikit-learn "
+                f"{exc.original_sklearn_version}, but {sklearn.__version__} is "
+                "installed; the model card's claim does not override the file"
+            ) from exc
         except Exception as exc:  # noqa: BLE001 - any failure here is fatal
             raise ModelLoadError(f"could not load artifact at {model_path}") from exc
 
