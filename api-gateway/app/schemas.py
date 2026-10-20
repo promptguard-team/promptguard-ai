@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.models import UserRole
+from app.models import AuditAction, MLStatus, UserRole
 
 
 def _lowercase_email(value: str) -> str:
@@ -59,3 +60,40 @@ class ChatResponse(BaseModel):
 
     response: str
     blocked: bool = False
+
+
+class AuditEventSummary(BaseModel):
+    """Audit event metadata for the CISO list view.
+
+    Deliberately carries no prompt or response text: the list is fetched on
+    every dashboard visit, so text served here would be copied into browsers
+    without anyone choosing to read it. Text is served by AuditEventDetail only.
+    """
+
+    id: uuid.UUID
+    created_at: datetime
+    user_id: uuid.UUID
+    user_email: EmailStr
+    action: AuditAction
+    rule: str | None
+    ml_status: MLStatus
+    ml_score: float | None
+    ml_label: str | None
+    ml_model_version: str | None
+    flagged: bool
+
+    @field_validator("created_at")
+    @classmethod
+    def _as_utc(cls, value: datetime) -> datetime:
+        # SQLite returns naive values for DateTime(timezone=True); every stored
+        # value is UTC, so both databases serialise identically.
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+
+class AuditEventDetail(AuditEventSummary):
+    """One audit event including the prompt and response text."""
+
+    prompt: str
+    response: str | None

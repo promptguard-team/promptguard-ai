@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.classifier import ClassifierClient
 from app.llm import LLMClient
-from app.models import User
+from app.models import User, UserRole
 from app.security import decode_access_token
 
 _bearer = HTTPBearer(auto_error=False)
@@ -53,6 +53,18 @@ async def get_current_user(
         user = await session.get(User, user_id)
     if user is None or not user.is_active:
         raise unauthorized
+    return user
+
+
+def require_ciso(user: User = Depends(get_current_user)) -> User:
+    """Allow only users whose stored role is ciso.
+
+    The role is read from the row get_current_user just loaded, never from the
+    token's role claim, so revoking the role takes effect on the next request
+    instead of when the token expires.
+    """
+    if user.role is not UserRole.ciso:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="ciso role required")
     return user
 
 
