@@ -109,6 +109,26 @@ docker compose run --rm api alembic upgrade head
 
 ---
 
+### 👤 CISO Account
+
+Registration always creates a `chat_user`. The `ciso` role, which opens the
+`/audit` endpoints, can only be granted from inside the gateway container —
+there is deliberately no HTTP endpoint for it.
+
+1. Register the account normally (`POST /auth/register`).
+2. Grant the role:
+
+```bash
+docker compose exec api python -m app.cli set-role <email> ciso
+```
+
+- To revoke it, run the same command with `chat_user`. It takes effect on the
+  user's next request; an already-issued token does not keep the old role.
+- **Problem:** `no user with email ...` — the account is not registered yet,
+  or the email has a typo (case does not matter).
+
+---
+
 ### 🔐 Detect-secrets (Secret Leak Prevention)
 
 - **Problem:** Pre-commit blocks a file, claiming it contains a password or token, but it is a false-positive (e.g., a fake hash in unit tests).

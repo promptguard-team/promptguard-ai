@@ -5,9 +5,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.classifier import ClassifierClient
+from app.cli import set_role
 from app.llm import LLMClient
 from app.main import create_app
-from app.models import Base
+from app.models import Base, UserRole
 
 
 @pytest_asyncio.fixture
@@ -70,4 +71,14 @@ async def auth_headers(client):
         "/auth/login",
         json={"email": "chatter@example.com", "password": "secret123"},
     )
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+@pytest_asyncio.fixture
+async def ciso_headers(app, client):
+    """Register a user, grant it the ciso role, and return its Bearer header."""
+    credentials = {"email": "ciso@example.com", "password": "secret123"}
+    await client.post("/auth/register", json=credentials)
+    await set_role(app.state.sessionmaker, "ciso@example.com", UserRole.ciso)
+    resp = await client.post("/auth/login", json=credentials)
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
