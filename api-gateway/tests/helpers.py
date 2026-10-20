@@ -42,3 +42,20 @@ def scoring(score, label="injection", version="test-model-0"):
         )
 
     return handler
+
+
+def counting_llm(app, reply="mock reply"):
+    """Replace the LLM client with one that records every request it receives.
+
+    Returns the list the handler appends to, so a blocking test can assert the
+    prompt never reached the provider. Asserting only the 403 cannot catch a
+    handler that forwards first and blocks afterwards.
+    """
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": reply}}]})
+
+    override_llm(app, handler)
+    return calls

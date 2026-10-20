@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -37,7 +39,11 @@ async def test_classify_sends_the_text_in_the_body():
         )
 
     await _client(capture).classify("a prompt")
-    assert b"a prompt" in seen["content"]
+    # The field name is the contract. Renaming it would make the service reject
+    # every request with a 422, which the gateway converts into a recorded
+    # fail-open -- Layer 2 silently off, with nothing on fire. A substring
+    # check cannot see that.
+    assert json.loads(seen["content"]) == {"text": "a prompt"}
 
 
 @pytest.mark.parametrize(

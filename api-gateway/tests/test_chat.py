@@ -4,7 +4,13 @@ import pytest
 from app.config import get_settings
 from app.models import AuditAction, MLStatus
 from app.models.audit import MAX_ML_LABEL_CHARS, MAX_ML_MODEL_VERSION_CHARS
-from tests.helpers import audit_events, override_classifier, override_llm, scoring
+from tests.helpers import (
+    audit_events,
+    counting_llm,
+    override_classifier,
+    override_llm,
+    scoring,
+)
 
 _FAKE_AWS_KEY = "AKIAIOSFODNN7EXAMPLE"  # pragma: allowlist secret
 
@@ -48,6 +54,7 @@ async def test_chat_returns_llm_reply_and_audits(app, client, auth_headers):
 
 
 async def test_chat_blocks_prompt_with_secret(app, client, auth_headers):
+    llm_calls = counting_llm(app)
     resp = await client.post(
         "/chat",
         json={"prompt": f"use {_FAKE_AWS_KEY} please"},
@@ -55,6 +62,9 @@ async def test_chat_blocks_prompt_with_secret(app, client, auth_headers):
     )
     assert resp.status_code == 403
     assert "aws_access_key" not in resp.text
+    # The whole point of blocking is that the prompt never leaves. A 403
+    # returned after forwarding would satisfy every other assertion here.
+    assert llm_calls == []
     events = await audit_events(app)
     assert len(events) == 1
     assert events[0].action == AuditAction.blocked_prompt
@@ -116,8 +126,12 @@ async def test_chat_returns_502_when_provider_sends_null_content(
 
 async def test_high_score_blocks_the_prompt(app, client, auth_headers):
     override_classifier(app, scoring(0.95))
+    llm_calls = counting_llm(app)
     resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
     assert resp.status_code == 403
+    # As above: a refactor that scored and forwarded concurrently would still
+    # return 403 and still write one audit row.
+    assert llm_calls == []
     events = await audit_events(app)
     assert len(events) == 1
     assert events[0].action == AuditAction.blocked_prompt
