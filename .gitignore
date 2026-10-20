@@ -232,3 +232,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# CI scan reports, written into the working directory by the pipeline
+bandit-report.json
+secrets-report.json

@@ -53,7 +53,22 @@ jobs:
         run: pytest
 
       - name: Step 4 - DevSecOps Security (SAST)
-        run: bandit -r app/
+        run: |
+          # bandit exits 0 even when it skips a file it cannot parse, so a
+          # zero-finding report means nothing unless the skip list is empty.
+          # An earlier version of this pipeline passed while scanning nothing.
+          bandit -r app/ -f json -o bandit-report.json || true
+          if [ "$(jq '.errors | length' bandit-report.json)" -gt 0 ]; then
+            echo "❌ bandit could not scan some files:"
+            jq -r '.errors[] | "  \(.filename): \(.reason)"' bandit-report.json
+            exit 1
+          fi
+          if [ "$(jq '.results | length' bandit-report.json)" -gt 0 ]; then
+            echo "❌ bandit found issues:"
+            jq -r '.results[] | "  \(.filename):\(.line_number) [\(.test_id)] \(.issue_text)"' bandit-report.json
+            exit 1
+          fi
+          echo "✅ bandit: no issues, and no files skipped."
 
       - name: Step 5 - Secret Detection
         run: |
