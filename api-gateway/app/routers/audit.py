@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
 from app.deps import require_ciso
 from app.models import AuditAction, AuditEvent, MLStatus, User
-from app.schemas import AuditEventDetail, AuditEventPage, AuditEventSummary
+from app.schemas import (
+    AuditEventDetail,
+    AuditEventPage,
+    AuditEventSummary,
+    AuditStats,
+)
 
 router = APIRouter(
     prefix="/audit", tags=["audit"], dependencies=[Depends(require_ciso)]
@@ -110,6 +115,37 @@ async def list_events(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get("/stats", response_model=AuditStats)
+async def get_stats(
+    window: TimeWindow = Depends(time_window),
+    session: AsyncSession = Depends(get_session),
+) -> AuditStats:
+    """Count audit events in a time window, without loading any rows."""
+    clauses = _window_clauses(window)
+    by_action = {action.value: 0 for action in AuditAction}
+    grouped = await session.execute(
+        select(AuditEvent.action, func.count())
+        .where(*clauses)
+        .group_by(AuditEvent.action)
+    )
+    for action, count in grouped:
+        by_action[action.value] = count
+
+    counts = await session.execute(
+        select(
+            func.count().filter(AuditEvent.flagged.is_(True)),
+            func.count().filter(AuditEvent.ml_status == MLStatus.unavailable),
+        ).where(*clauses)
+    )
+    flagged, ml_unavailable = counts.one()
+    return AuditStats(
+        total=sum(by_action.values()),
+        by_action=by_action,
+        flagged=flagged,
+        ml_unavailable=ml_unavailable,
     )
 
 

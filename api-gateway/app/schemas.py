@@ -106,3 +106,13 @@ class AuditEventPage(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class AuditStats(BaseModel):
+    """Audit event counts over a time window."""
+
+    total: int
+    by_action: dict[str, int]
+    flagged: int
+    # Requests that went through without a Layer 2 verdict (fail-open).
+    ml_unavailable: int
