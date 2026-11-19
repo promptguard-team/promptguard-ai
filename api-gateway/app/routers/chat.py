@@ -14,6 +14,7 @@ from app.deps import (
     get_sessionmaker,
 )
 from app.llm import LLMClient, LLMError
+from app.metrics import CHAT_DECISIONS, CHAT_FLAGGED
 from app.models import AuditAction, AuditEvent, MLStatus, User
 from app.rules import scan_text
 from app.schemas import ChatRequest, ChatResponse
@@ -61,14 +62,23 @@ class AuditDraft:
 async def _write(
     sessionmaker: async_sessionmaker[AsyncSession], draft: AuditDraft
 ) -> None:
-    """Persist the request's single audit event.
+    """Persist the request's single audit event and count it.
 
     Opens its own short-lived session so no pooled connection is held during
-    the provider round-trip.
+    the provider round-trip. Every decision path of /chat passes through here, so
+    this is the one place the decision counters are incremented; counting
+    after the commit means a failed write is not reported as a decision.
+    Requests rejected before the handler (401/422) or failing unexpectedly are
+    visible only in the HTTP metrics.
     """
     async with sessionmaker() as session:
         session.add(draft.to_event())
         await session.commit()
+    CHAT_DECISIONS.labels(
+        action=draft.action.value, ml_status=draft.ml_status.value
+    ).inc()
+    if draft.flagged:
+        CHAT_FLAGGED.inc()
 
 
 @router.post("/chat", response_model=ChatResponse)

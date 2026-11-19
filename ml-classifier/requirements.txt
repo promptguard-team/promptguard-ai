@@ -6,3 +6,5 @@ scikit-learn==1.7.2
 numpy==2.5.3
 joblib==1.6.0
 anyio==4.7.0
+prometheus-client==0.26.0
+prometheus-fastapi-instrumentator==7.1.0

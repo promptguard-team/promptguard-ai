@@ -34,6 +34,16 @@ Returns `422` for empty text or text longer than `CLASSIFIER_MAX_TEXT_CHARS`
 Reports `status`, `model_version` and `stub`. The service refuses to start
 without a loadable, valid artifact, so a running process always has a model.
 
+### `GET /metrics`
+
+Prometheus exposition. Besides the standard HTTP series it reports
+`promptguard_ml_inference_seconds` (time in `predict`, measured in the worker
+thread, so thread-pool queueing is excluded), `promptguard_ml_score_ratio` (the
+distribution of P(injection) in buckets of 0.1, with edges at the gateway's
+default review and block thresholds), and
+`promptguard_ml_model_info{model_version, stub}`, which lets dashboards show
+when the stub is being served.
+
 ## Configuration
 
 | Variable | Default | Meaning |

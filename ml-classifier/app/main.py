@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -6,7 +7,8 @@ import anyio.to_thread
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 
 from app.config import Settings, get_settings
-from app.model import ModelBundle
+from app.metrics import INFERENCE_SECONDS, SCORE, record_model, setup_metrics
+from app.model import ModelBundle, Prediction
 from app.schemas import ClassifyRequest, ClassifyResponse
 
 logger = logging.getLogger(__name__)
@@ -23,12 +25,25 @@ async def lifespan(app: FastAPI):
             bundle.version,
         )
     app.state.bundle = bundle
+    record_model(bundle)
     yield
 
 
 def get_bundle(request: Request) -> ModelBundle:
     """Return the model loaded in the lifespan."""
     return request.app.state.bundle
+
+
+def _timed_predict(bundle: ModelBundle, text: str) -> Prediction:
+    """Run the model in the worker thread and time only the model itself.
+
+    Timing here, not around run_sync, keeps thread-pool queueing out of the
+    inference histogram; end-to-end latency is in the HTTP metrics.
+    """
+    started = time.perf_counter()
+    prediction = bundle.predict(text)
+    INFERENCE_SECONDS.observe(time.perf_counter() - started)
+    return prediction
 
 
 def create_app() -> FastAPI:
@@ -45,7 +60,8 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, detail="text too long"
             )
-        prediction = await anyio.to_thread.run_sync(bundle.predict, body.text)
+        prediction = await anyio.to_thread.run_sync(_timed_predict, bundle, body.text)
+        SCORE.observe(prediction.score)
         return ClassifyResponse(
             label=prediction.label,
             score=prediction.score,
@@ -61,6 +77,7 @@ def create_app() -> FastAPI:
             "stub": bundle.is_stub,
         }
 
+    setup_metrics(app)
     return app
 
 
