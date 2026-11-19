@@ -88,12 +88,18 @@ Neither is implemented.
   `ml_status = unavailable`.
 * `GET /health` — liveness check.
 * `GET /health/db` — database connectivity check.
+* `GET /metrics` — Prometheus exposition: HTTP request counts and latency,
+  `/chat` decisions by `action`/`ml_status`, flagged prompts, and classifier
+  round-trip time by outcome. Blocked at the nginx edge; scraped directly by
+  the compose Prometheus.
 
 ## ML Classifier Endpoints
 * `POST /classify` — score one prompt; returns `label`, `score` (P(injection))
   and `model_version`. It returns a measurement, never a verdict.
 * `GET /health` — readiness probe; reports `model_version` and whether the
   served artifact is a stub.
+* `GET /metrics` — Prometheus exposition: HTTP metrics, model inference time,
+  the score distribution, and the served `model_version`.
 
 The shipped model is a labelled stub, not a security control. See
 [ml-classifier/README.md](ml-classifier/README.md) for the artifact contract
