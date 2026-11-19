@@ -67,8 +67,21 @@ async def test_classify_observes_inference_time_and_score(client):
     assert sample(SCORE_SUM) - sum_before == pytest.approx(resp.json()["score"])
 
 
-async def test_rejected_text_is_not_observed(client):
+@pytest.mark.parametrize(
+    ("text", "max_chars"),
+    [("", None), ("x" * 11, "10")],
+    ids=["empty-text", "over-long-text"],
+)
+async def test_rejected_text_is_not_observed(client, monkeypatch, text, max_chars):
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    if max_chars is not None:
+        monkeypatch.setenv("CLASSIFIER_MAX_TEXT_CHARS", max_chars)
     inf_before = sample(INFERENCE_COUNT)
-    resp = await client.post("/classify", json={"text": ""})
+    cnt_before = sample(SCORE_COUNT)
+    resp = await client.post("/classify", json={"text": text})
+    get_settings.cache_clear()
     assert resp.status_code == 422
     assert sample(INFERENCE_COUNT) == inf_before
+    assert sample(SCORE_COUNT) == cnt_before

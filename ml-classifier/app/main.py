@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 
 from app.config import Settings, get_settings
 from app.metrics import INFERENCE_SECONDS, SCORE, setup_metrics
-from app.model import ModelBundle
+from app.model import ModelBundle, Prediction
 from app.schemas import ClassifyRequest, ClassifyResponse
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,18 @@ def get_bundle(request: Request) -> ModelBundle:
     return request.app.state.bundle
 
 
+def _timed_predict(bundle: ModelBundle, text: str) -> Prediction:
+    """Run the model in the worker thread and time only the model itself.
+
+    Timing here, not around run_sync, keeps thread-pool queueing out of the
+    inference histogram; end-to-end latency is in the HTTP metrics.
+    """
+    started = time.perf_counter()
+    prediction = bundle.predict(text)
+    INFERENCE_SECONDS.observe(time.perf_counter() - started)
+    return prediction
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="PromptGuard ML Classifier", lifespan=lifespan)
 
@@ -47,9 +59,7 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, detail="text too long"
             )
-        started = time.perf_counter()
-        prediction = await anyio.to_thread.run_sync(bundle.predict, body.text)
-        INFERENCE_SECONDS.observe(time.perf_counter() - started)
+        prediction = await anyio.to_thread.run_sync(_timed_predict, bundle, body.text)
         SCORE.observe(prediction.score)
         return ClassifyResponse(
             label=prediction.label,

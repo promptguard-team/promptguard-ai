@@ -2,7 +2,8 @@
 
 Metrics are created at import time so they are registered exactly once per
 process, however many apps the test suite builds. No metric carries the
-scored text or anything derived from it beyond the score.
+scored text or anything derived from it beyond the score. Label values must
+never come from request data: only route templates and the served model's card.
 """
 
 from fastapi import FastAPI
@@ -18,7 +19,12 @@ INFERENCE_SECONDS = Histogram(
 )
 
 # Distribution of P(injection). Together with the gateway's thresholds this
-# shows how much traffic sits near the block/review boundaries.
+# shows how much traffic sits near the block/review boundaries. The 0.6 and 0.9
+# edges match the gateway's DEFAULT review/block thresholds
+# (CLASSIFIER_REVIEW_THRESHOLD / CLASSIFIER_BLOCK_THRESHOLD, configured on the
+# gateway, not here). Prometheus buckets are `le` while the gateway compares
+# `>=`, so a score of exactly a threshold counts below it. Revisit the buckets
+# if the thresholds are moved.
 SCORE = Histogram(
     "promptguard_ml_score",
     "P(injection) returned by /classify.",
