@@ -7,7 +7,7 @@ import anyio.to_thread
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 
 from app.config import Settings, get_settings
-from app.metrics import INFERENCE_SECONDS, SCORE, setup_metrics
+from app.metrics import INFERENCE_SECONDS, SCORE, record_model, setup_metrics
 from app.model import ModelBundle, Prediction
 from app.schemas import ClassifyRequest, ClassifyResponse
 
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
             bundle.version,
         )
     app.state.bundle = bundle
+    record_model(bundle)
     yield
 
 

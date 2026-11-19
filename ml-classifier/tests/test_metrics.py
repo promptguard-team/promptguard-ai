@@ -8,13 +8,17 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from prometheus_client import REGISTRY
 
-from app.main import create_app
+from app.main import create_app, lifespan
+from app.metrics import MODEL_INFO as MODEL_INFO_GAUGE
+from app.metrics import record_model
 from app.model import ModelBundle
 from tests.paths import ARTIFACT
 
 INFERENCE_COUNT = "promptguard_ml_inference_seconds_count"
 SCORE_COUNT = "promptguard_ml_score_count"
 SCORE_SUM = "promptguard_ml_score_sum"
+MODEL_INFO = "promptguard_ml_model_info"
+STUB_LABELS = {"model_version": "stub-tfidf-0.1.0", "stub": "true"}
 HEALTH_2XX = {"handler": "/health", "method": "GET", "status": "2xx"}
 
 
@@ -85,3 +89,31 @@ async def test_rejected_text_is_not_observed(client, monkeypatch, text, max_char
     assert resp.status_code == 422
     assert sample(INFERENCE_COUNT) == inf_before
     assert sample(SCORE_COUNT) == cnt_before
+
+
+def info_series() -> list:
+    return [
+        s
+        for metric in REGISTRY.collect()
+        if metric.name == MODEL_INFO
+        for s in metric.samples
+    ]
+
+
+def test_record_model_publishes_version_and_stub_flag():
+    record_model(ModelBundle.load(ARTIFACT))
+    assert sample(MODEL_INFO, STUB_LABELS) == 1
+
+
+def test_record_model_keeps_only_the_latest_series():
+    bundle = ModelBundle.load(ARTIFACT)
+    record_model(bundle)
+    record_model(bundle)
+    assert len(info_series()) == 1
+
+
+async def test_lifespan_records_the_served_model():
+    MODEL_INFO_GAUGE.clear()
+    application = create_app()
+    async with lifespan(application):
+        assert sample(MODEL_INFO, STUB_LABELS) == 1
