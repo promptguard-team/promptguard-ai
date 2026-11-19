@@ -9,6 +9,7 @@ from app.classifier import ClassifierClient
 from app.config import get_settings
 from app.db import build_engine, build_sessionmaker, verify_schema_is_current
 from app.llm import LLMClient
+from app.metrics import setup_metrics
 from app.routers import audit, auth, chat, health
 
 _SENSITIVE_FIELDS = frozenset({"password", "prompt"})
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(chat.router)
     app.include_router(audit.router)
+    setup_metrics(app)
     return app
 
 
