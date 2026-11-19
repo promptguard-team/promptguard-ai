@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -6,6 +7,7 @@ import anyio.to_thread
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 
 from app.config import Settings, get_settings
+from app.metrics import INFERENCE_SECONDS, SCORE, setup_metrics
 from app.model import ModelBundle
 from app.schemas import ClassifyRequest, ClassifyResponse
 
@@ -45,7 +47,10 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, detail="text too long"
             )
+        started = time.perf_counter()
         prediction = await anyio.to_thread.run_sync(bundle.predict, body.text)
+        INFERENCE_SECONDS.observe(time.perf_counter() - started)
+        SCORE.observe(prediction.score)
         return ClassifyResponse(
             label=prediction.label,
             score=prediction.score,
@@ -61,6 +66,7 @@ def create_app() -> FastAPI:
             "stub": bundle.is_stub,
         }
 
+    setup_metrics(app)
     return app
 
 
