@@ -10,11 +10,18 @@ from fastapi import FastAPI
 from prometheus_client import Counter, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator, metrics
 
+from app.models import AuditAction, MLStatus
+
 CHAT_DECISIONS = Counter(
     "promptguard_chat_decisions_total",
-    "Outcome of every /chat request, as recorded in the audit log.",
+    "Policy decision for each /chat request that reached the audit log.",
     labelnames=("action", "ml_status"),
 )
+# A labelled series does not exist until it is first touched; create all of
+# them up front so dashboards and alerts see 0 rather than "no data".
+for _action in AuditAction:
+    for _status in MLStatus:
+        CHAT_DECISIONS.labels(action=_action.value, ml_status=_status.value)
 
 CHAT_FLAGGED = Counter(
     "promptguard_chat_flagged_total",

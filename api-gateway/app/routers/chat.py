@@ -65,9 +65,11 @@ async def _write(
     """Persist the request's single audit event and count it.
 
     Opens its own short-lived session so no pooled connection is held during
-    the provider round-trip. Every exit path of /chat passes through here, so
+    the provider round-trip. Every decision path of /chat passes through here, so
     this is the one place the decision counters are incremented; counting
     after the commit means a failed write is not reported as a decision.
+    Requests rejected before the handler (401/422) or failing unexpectedly are
+    visible only in the HTTP metrics.
     """
     async with sessionmaker() as session:
         session.add(draft.to_event())

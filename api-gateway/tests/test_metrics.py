@@ -5,11 +5,14 @@ deltas, so test order and the number of apps built in this process do not
 matter.
 """
 
+from itertools import product
+
 import httpx
 from httpx import ASGITransport, AsyncClient
 from prometheus_client import REGISTRY
 
 from app.main import create_app
+from app.models import AuditAction, MLStatus
 from tests.helpers import override_classifier, override_llm, scoring
 
 _FAKE_AWS_KEY = "AKIAIOSFODNN7EXAMPLE"  # pragma: allowlist secret
@@ -58,12 +61,9 @@ async def test_every_app_in_the_process_is_instrumented():
 
 def decisions_snapshot() -> dict[tuple[str, str], float]:
     """Every (action, ml_status) series currently in the registry."""
-    actions = ("allowed", "blocked_prompt", "blocked_response", "provider_error")
-    statuses = ("skipped", "ok", "unavailable")
     return {
-        (a, s): sample(DECISIONS, {"action": a, "ml_status": s})
-        for a in actions
-        for s in statuses
+        (a.value, s.value): sample(DECISIONS, {"action": a.value, "ml_status": s.value})
+        for a, s in product(AuditAction, MLStatus)
     }
 
 
@@ -138,5 +138,15 @@ async def test_review_threshold_counts_flagged(app, client, auth_headers):
 
 async def test_clean_prompt_is_not_flagged(client, auth_headers):
     before = sample(FLAGGED)
-    await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    resp = await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    assert resp.status_code == 200
     assert sample(FLAGGED) == before
+
+
+async def test_all_decision_series_exist_before_any_request():
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.get("/metrics")
+    for action, status in product(AuditAction, MLStatus):
+        labels = {"action": action.value, "ml_status": status.value}
+        assert REGISTRY.get_sample_value(DECISIONS, labels) is not None, labels
