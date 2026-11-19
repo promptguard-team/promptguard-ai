@@ -15,8 +15,8 @@ from app.model import ModelBundle
 from tests.paths import ARTIFACT
 
 INFERENCE_COUNT = "promptguard_ml_inference_seconds_count"
-SCORE_COUNT = "promptguard_ml_score_count"
-SCORE_SUM = "promptguard_ml_score_sum"
+SCORE_COUNT = "promptguard_ml_score_ratio_count"
+SCORE_SUM = "promptguard_ml_score_ratio_sum"
 MODEL_INFO = "promptguard_ml_model_info"
 STUB_LABELS = {"model_version": "stub-tfidf-0.1.0", "stub": "true"}
 HEALTH_2XX = {"handler": "/health", "method": "GET", "status": "2xx"}
@@ -33,7 +33,7 @@ async def test_metrics_endpoint_is_in_prometheus_format(client):
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/plain")
     assert "http_requests_total" in resp.text
-    assert "promptguard_ml_score" in resp.text
+    assert "promptguard_ml_score_ratio" in resp.text
 
 
 async def test_metrics_endpoint_is_hidden_from_openapi(client):

@@ -26,7 +26,7 @@ INFERENCE_SECONDS = Histogram(
 # `>=`, so a score of exactly a threshold counts below it. Revisit the buckets
 # if the thresholds are moved.
 SCORE = Histogram(
-    "promptguard_ml_score",
+    "promptguard_ml_score_ratio",
     "P(injection) returned by /classify.",
     buckets=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
 )
@@ -41,6 +41,9 @@ MODEL_INFO = Gauge(
 # and on a second app in the same process it hits the registry's
 # duplicate-series error and silently instruments nothing. Building them once
 # here and handing the same closure to every app keeps all apps instrumented.
+# All series live in the default in-process registry: this assumes a single
+# uvicorn worker. Running several workers needs PROMETHEUS_MULTIPROC_DIR, or
+# each scrape sees only one worker's numbers.
 _HTTP_METRICS = metrics.default()
 
 

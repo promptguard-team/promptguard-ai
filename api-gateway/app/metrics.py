@@ -45,6 +45,9 @@ for _outcome in ("ok", "error"):
 # and on a second app in the same process it hits the registry's
 # duplicate-series error and silently instruments nothing. Building them once
 # here and handing the same closure to every app keeps all apps instrumented.
+# All series live in the default in-process registry: this assumes a single
+# uvicorn worker. Running several workers needs PROMETHEUS_MULTIPROC_DIR, or
+# each scrape sees only one worker's numbers.
 _HTTP_METRICS = metrics.default()
 
 
