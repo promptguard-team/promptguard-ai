@@ -7,10 +7,13 @@ matter.
 
 from itertools import product
 
+import asyncio
+
 import httpx
 from httpx import ASGITransport, AsyncClient
 from prometheus_client import REGISTRY
 
+from app.classifier import ClassifierClient
 from app.main import create_app
 from app.models import AuditAction, MLStatus
 from tests.helpers import override_classifier, override_llm, scoring
@@ -153,12 +156,16 @@ async def test_all_decision_series_exist_before_any_request():
 
 
 CLASSIFIER_COUNT = "promptguard_classifier_request_seconds_count"
+CLASSIFIER_SUM = "promptguard_classifier_request_seconds_sum"
 
 
 async def test_successful_classify_is_timed_as_ok(client, auth_headers):
     ok_before = sample(CLASSIFIER_COUNT, {"outcome": "ok"})
     err_before = sample(CLASSIFIER_COUNT, {"outcome": "error"})
-    await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    sum_before = sample(CLASSIFIER_SUM, {"outcome": "ok"})
+    resp = await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    assert resp.status_code == 200
+    assert sample(CLASSIFIER_SUM, {"outcome": "ok"}) > sum_before
     assert sample(CLASSIFIER_COUNT, {"outcome": "ok"}) == ok_before + 1
     assert sample(CLASSIFIER_COUNT, {"outcome": "error"}) == err_before
 
@@ -167,7 +174,10 @@ async def test_failed_classify_is_timed_as_error(app, client, auth_headers):
     override_classifier(app, lambda request: httpx.Response(500))
     ok_before = sample(CLASSIFIER_COUNT, {"outcome": "ok"})
     err_before = sample(CLASSIFIER_COUNT, {"outcome": "error"})
-    await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    sum_before = sample(CLASSIFIER_SUM, {"outcome": "error"})
+    resp = await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    assert resp.status_code == 200
+    assert sample(CLASSIFIER_SUM, {"outcome": "error"}) > sum_before
     assert sample(CLASSIFIER_COUNT, {"outcome": "ok"}) == ok_before
     assert sample(CLASSIFIER_COUNT, {"outcome": "error"}) == err_before + 1
 
@@ -175,8 +185,33 @@ async def test_failed_classify_is_timed_as_error(app, client, auth_headers):
 async def test_malformed_classify_response_is_timed_as_error(app, client, auth_headers):
     override_classifier(app, lambda request: httpx.Response(200, json={"nope": 1}))
     err_before = sample(CLASSIFIER_COUNT, {"outcome": "error"})
-    await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    sum_before = sample(CLASSIFIER_SUM, {"outcome": "error"})
+    resp = await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    assert resp.status_code == 200
+    assert sample(CLASSIFIER_SUM, {"outcome": "error"}) > sum_before
     assert sample(CLASSIFIER_COUNT, {"outcome": "error"}) == err_before + 1
+
+
+async def test_timed_out_classify_is_timed_as_error_at_about_the_budget(
+    app, client, auth_headers
+):
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.5)
+        return httpx.Response(200)
+
+    await app.state.classifier_client.aclose()
+    app.state.classifier_client = ClassifierClient(
+        base_url="http://ml.test",
+        timeout_seconds=0.05,
+        transport=httpx.MockTransport(slow),
+    )
+    err_before = sample(CLASSIFIER_COUNT, {"outcome": "error"})
+    sum_before = sample(CLASSIFIER_SUM, {"outcome": "error"})
+    resp = await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    assert resp.status_code == 200
+    assert sample(CLASSIFIER_COUNT, {"outcome": "error"}) == err_before + 1
+    elapsed = sample(CLASSIFIER_SUM, {"outcome": "error"}) - sum_before
+    assert 0.05 <= elapsed < 1.0
 
 
 async def test_classifier_outcome_series_exist_before_any_request():

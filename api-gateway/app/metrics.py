@@ -28,6 +28,9 @@ CHAT_FLAGGED = Counter(
     "Prompts that were allowed but marked for CISO review.",
 )
 
+# The 2.0 edge matches the default CLASSIFIER_TIMEOUT_SECONDS budget, so timed-out
+# calls (observed just above it) land in the 5.0 bucket, apart from slow
+# successes. Revisit the buckets if the budget is raised past 5s.
 CLASSIFIER_REQUEST_SECONDS = Histogram(
     "promptguard_classifier_request_seconds",
     "Round trip to the ml-classifier service, including response validation.",
