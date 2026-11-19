@@ -1,8 +1,10 @@
+import time
 from dataclasses import dataclass
 
 import anyio
 import httpx
 
+from app.metrics import CLASSIFIER_REQUEST_SECONDS
 from app.models.audit import MAX_ML_LABEL_CHARS, MAX_ML_MODEL_VERSION_CHARS
 
 
@@ -34,7 +36,20 @@ class ClassifierClient:
         )
 
     async def classify(self, text: str) -> Verdict:
-        """Score one text, or raise ClassifierError."""
+        """Score one text, or raise ClassifierError. Every call is timed."""
+        started = time.perf_counter()
+        outcome = "error"
+        try:
+            verdict = await self._classify(text)
+            outcome = "ok"
+            return verdict
+        finally:
+            CLASSIFIER_REQUEST_SECONDS.labels(outcome=outcome).observe(
+                time.perf_counter() - started
+            )
+
+    async def _classify(self, text: str) -> Verdict:
+        """Score one text, or raise ClassifierError. Untimed; see classify()."""
         # httpx's read timeout is the gap between reads, not elapsed time, so a
         # classifier dribbling one byte at a time would hold /chat open for as
         # long as it liked. The timeout is a budget for the whole call.

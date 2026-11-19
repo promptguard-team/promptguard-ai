@@ -150,3 +150,39 @@ async def test_all_decision_series_exist_before_any_request():
     for action, status in product(AuditAction, MLStatus):
         labels = {"action": action.value, "ml_status": status.value}
         assert REGISTRY.get_sample_value(DECISIONS, labels) is not None, labels
+
+
+CLASSIFIER_COUNT = "promptguard_classifier_request_seconds_count"
+
+
+async def test_successful_classify_is_timed_as_ok(client, auth_headers):
+    ok_before = sample(CLASSIFIER_COUNT, {"outcome": "ok"})
+    err_before = sample(CLASSIFIER_COUNT, {"outcome": "error"})
+    await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    assert sample(CLASSIFIER_COUNT, {"outcome": "ok"}) == ok_before + 1
+    assert sample(CLASSIFIER_COUNT, {"outcome": "error"}) == err_before
+
+
+async def test_failed_classify_is_timed_as_error(app, client, auth_headers):
+    override_classifier(app, lambda request: httpx.Response(500))
+    ok_before = sample(CLASSIFIER_COUNT, {"outcome": "ok"})
+    err_before = sample(CLASSIFIER_COUNT, {"outcome": "error"})
+    await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    assert sample(CLASSIFIER_COUNT, {"outcome": "ok"}) == ok_before
+    assert sample(CLASSIFIER_COUNT, {"outcome": "error"}) == err_before + 1
+
+
+async def test_malformed_classify_response_is_timed_as_error(app, client, auth_headers):
+    override_classifier(app, lambda request: httpx.Response(200, json={"nope": 1}))
+    err_before = sample(CLASSIFIER_COUNT, {"outcome": "error"})
+    await client.post("/chat", json={"prompt": "hello"}, headers=auth_headers)
+    assert sample(CLASSIFIER_COUNT, {"outcome": "error"}) == err_before + 1
+
+
+async def test_classifier_outcome_series_exist_before_any_request():
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.get("/metrics")
+    for outcome in ("ok", "error"):
+        labels = {"outcome": outcome}
+        assert REGISTRY.get_sample_value(CLASSIFIER_COUNT, labels) is not None, labels
