@@ -38,6 +38,5 @@ _HTTP_METRICS = metrics.default()
 
 def setup_metrics(app: FastAPI) -> None:
     """Instrument HTTP traffic and expose GET /metrics on `app`."""
-    Instrumentator(excluded_handlers=["/metrics"]).add(_HTTP_METRICS).instrument(
-        app
-    ).expose(app, include_in_schema=False)
+    instrumentator = Instrumentator(excluded_handlers=["^/metrics$"]).add(_HTTP_METRICS)
+    instrumentator.instrument(app).expose(app, include_in_schema=False)
