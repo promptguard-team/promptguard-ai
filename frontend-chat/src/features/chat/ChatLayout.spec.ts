@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import * as chatApi from '@/api/chat';
 import { i18n } from '@/i18n';
 import { CONVERSATION_ROUTE } from '@/router/guard';
+import { TOKEN_KEY, useAuthStore } from '@/stores/auth';
 import { useConversationsStore } from '@/stores/conversations';
 import ChatLayout from './ChatLayout.vue';
 
@@ -73,5 +74,20 @@ describe('ChatLayout', () => {
 
     expect(conversations.get(id)).toBeUndefined();
     expect(router.currentRoute.value.fullPath).toBe('/');
+  });
+
+  it('logs out from the drawer: clears the session and goes to /login', async () => {
+    const { wrapper, router, conversations } = await mountLayout();
+    const auth = useAuthStore();
+    auth.token = 'tok';
+    localStorage.setItem(TOKEN_KEY, 'tok');
+
+    wrapper.findComponent({ name: 'ConversationDrawer' }).vm.$emit('logout');
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe('/login');
+    expect(conversations.userId).toBeNull();
+    expect(auth.token).toBeNull();
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
   });
 });

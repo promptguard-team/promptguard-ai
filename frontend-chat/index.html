@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PromptGuard</title>
+    <style>
+      html,
+      body {
+        background: #131417;
+      }
+    </style>
+    <script>
+      try {
+        if (localStorage.getItem('promptguard.ui.theme') === 'light') {
+          document.documentElement.style.background = '#ffffff';
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

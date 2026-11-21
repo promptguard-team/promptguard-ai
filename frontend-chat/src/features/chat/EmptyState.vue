@@ -21,6 +21,8 @@ const { t } = useI18n();
   flex-direction: column
   align-items: center
   justify-content: center
+  justify-content: safe center
+  overflow-y: auto
   padding: 16px
 
 .empty-state__greeting

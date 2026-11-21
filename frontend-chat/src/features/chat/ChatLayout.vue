@@ -102,7 +102,7 @@ async function onLogout(): Promise<void> {
       </q-toolbar>
     </q-header>
 
-    <q-drawer v-model="drawerOpen" show-if-above bordered :width="260" :breakpoint="1024">
+    <q-drawer v-model="drawerOpen" show-if-above bordered :width="260" :breakpoint="1023">
       <ConversationDrawer
         :conversations="conversations.sorted"
         :active-id="activeId"
@@ -119,12 +119,12 @@ async function onLogout(): Promise<void> {
     <q-page-container>
       <q-page class="chat-page" :style-fn="pageStyle">
         <EmptyState v-if="messages.length === 0">
-          <ChatInput :disabled="conversations.sending" @send="onSend" />
+          <ChatInput :key="activeId ?? 'new'" :disabled="conversations.sending" @send="onSend" />
         </EmptyState>
         <template v-else>
           <MessageList :messages="messages" @retry="onRetry" />
           <div class="chat-page__input">
-            <ChatInput :disabled="conversations.sending" @send="onSend" />
+            <ChatInput :key="activeId ?? 'new'" :disabled="conversations.sending" @send="onSend" />
           </div>
         </template>
       </q-page>
