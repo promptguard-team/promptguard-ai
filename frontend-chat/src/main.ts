@@ -10,10 +10,13 @@ import { i18n } from './i18n';
 import { router } from './router';
 import { useAuthStore } from './stores/auth';
 import { useConversationsStore } from './stores/conversations';
+import { applyStoredTheme } from './theme';
 
 const app = createApp(App);
 app.use(createPinia());
 app.use(Quasar, { plugins: { Dark }, config: { dark: true } });
+// Runs after install so the stored preference overrides the dark default above.
+applyStoredTheme();
 app.use(i18n);
 
 const auth = useAuthStore();
