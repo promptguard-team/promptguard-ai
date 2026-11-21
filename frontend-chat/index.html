@@ -1,19 +1,23 @@
 <!doctype html>
-<html lang="pl">
+<html lang="pl" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PromptGuard</title>
     <style>
-      html,
-      body {
+      html[data-theme='dark'],
+      html[data-theme='dark'] body {
         background: #131417;
+      }
+      html[data-theme='light'],
+      html[data-theme='light'] body {
+        background: #ffffff;
       }
     </style>
     <script>
       try {
         if (localStorage.getItem('promptguard.ui.theme') === 'light') {
-          document.documentElement.style.background = '#ffffff';
+          document.documentElement.dataset.theme = 'light';
         }
       } catch (e) {}
     </script>

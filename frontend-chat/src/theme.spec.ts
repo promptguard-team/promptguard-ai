@@ -14,18 +14,21 @@ describe('theme', () => {
     Dark.set(false);
     applyStoredTheme();
     expect(Dark.isActive).toBe(true);
+    expect(document.documentElement.dataset.theme).toBe('dark');
   });
 
   it('is light when light is stored', () => {
     localStorage.setItem(THEME_KEY, 'light');
     applyStoredTheme();
     expect(Dark.isActive).toBe(false);
+    expect(document.documentElement.dataset.theme).toBe('light');
   });
 
   it('toggles the mode and persists the choice', () => {
     toggleTheme();
     expect(Dark.isActive).toBe(false);
     expect(localStorage.getItem(THEME_KEY)).toBe('light');
+    expect(document.documentElement.dataset.theme).toBe('light');
     toggleTheme();
     expect(Dark.isActive).toBe(true);
     expect(localStorage.getItem(THEME_KEY)).toBe('dark');
