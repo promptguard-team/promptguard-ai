@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { describe, expect, it } from 'vitest';
 import { renderMarkdown } from './markdown';
 
@@ -43,5 +44,42 @@ describe('renderMarkdown', () => {
 
   it('keeps line breaks inside a paragraph', () => {
     expect(renderMarkdown('a\nb')).toContain('<br');
+  });
+
+  it('renders the alt text of a blocked image as plain text', () => {
+    const root = parse(renderMarkdown('![cat <b>pic</b>](https://evil.example/x.png)'));
+    expect(root.querySelector('img')).toBeNull();
+    expect(root.querySelector('b')).toBeNull();
+    expect(root.textContent).toContain('cat <b>pic</b>');
+  });
+
+  it('drops entity-encoded javascript: schemes', () => {
+    const root = parse(renderMarkdown('[x](&#106;avascript:alert(1))'));
+    expect(root.querySelector('a')).toBeNull();
+    expect(root.querySelector('[href]')).toBeNull();
+  });
+
+  it('drops javascript: reference-style links', () => {
+    const root = parse(renderMarkdown('[x][r]\n\n[r]: javascript:alert(1)'));
+    expect(root.querySelector('[href]')).toBeNull();
+  });
+
+  it('linkifies bare URLs with target and rel', () => {
+    const a = parse(renderMarkdown('see https://example.com')).querySelector('a');
+    expect(a?.getAttribute('href')).toBe('https://example.com');
+    expect(a?.getAttribute('target')).toBe('_blank');
+    expect(a?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('keeps HTML inside a code span escaped', () => {
+    const root = parse(renderMarkdown('`<img src=x onerror=alert(1)>`'));
+    expect(root.querySelector('img')).toBeNull();
+    expect(root.querySelector('code')?.textContent).toBe('<img src=x onerror=alert(1)>');
+  });
+
+  it('does not leak the link hook into the global DOMPurify instance', () => {
+    renderMarkdown('[site](https://example.com)');
+    const root = parse(DOMPurify.sanitize('<a href="https://e.com">x</a>'));
+    expect(root.querySelector('a')?.hasAttribute('target')).toBe(false);
   });
 });

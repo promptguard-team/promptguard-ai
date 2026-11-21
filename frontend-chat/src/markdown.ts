@@ -5,6 +5,10 @@ import DOMPurify from 'dompurify';
 // (html: false) and DOMPurify enforces an allowlist on the result.
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 
+// Images are a data-exfiltration channel for prompt injection, so they stay
+// blocked. Show the alt text as plain escaped text instead of dropping it.
+md.renderer.rules.image = (tokens, idx) => md.utils.escapeHtml(tokens[idx]!.content);
+
 const ALLOWED_TAGS = [
   'a',
   'p',
@@ -35,7 +39,11 @@ const ALLOWED_TAGS = [
 ];
 const ALLOWED_ATTR = ['href', 'title', 'target', 'rel', 'class'];
 
-DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+// Private instance: the hook must not leak into other DOMPurify users or stack
+// up on HMR reloads.
+const purifier = DOMPurify(window);
+
+purifier.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'A') {
     node.setAttribute('target', '_blank');
     node.setAttribute('rel', 'noopener noreferrer');
@@ -43,5 +51,5 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 });
 
 export function renderMarkdown(source: string): string {
-  return DOMPurify.sanitize(md.render(source), { ALLOWED_TAGS, ALLOWED_ATTR });
+  return purifier.sanitize(md.render(source), { ALLOWED_TAGS, ALLOWED_ATTR });
 }
