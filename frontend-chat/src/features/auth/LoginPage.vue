@@ -18,6 +18,9 @@ const error = ref<string | null>(null);
 const expired = computed(() => route.query.reason === 'expired');
 
 async function submit(): Promise<void> {
+  if (submitting.value) {
+    return;
+  }
   error.value = null;
   submitting.value = true;
   try {
@@ -59,7 +62,7 @@ async function submit(): Promise<void> {
                 dense
                 autocomplete="username"
                 :label="t('login.email')"
-                :rules="[(v: string) => !!v || t('login.required')]"
+                :rules="[(v: string) => !!v?.trim() || t('login.required')]"
               />
               <q-input
                 v-model="password"
@@ -70,7 +73,7 @@ async function submit(): Promise<void> {
                 :label="t('login.password')"
                 :rules="[(v: string) => !!v || t('login.required')]"
               />
-              <div v-if="error" class="text-negative text-body2">{{ error }}</div>
+              <div v-if="error" role="alert" class="text-negative text-body2">{{ error }}</div>
               <q-btn
                 type="submit"
                 color="primary"
