@@ -1,0 +1,38 @@
+body
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif
+  -webkit-font-smoothing: antialiased
+
+// Rendered LLM markdown.
+.markdown
+  line-height: 1.6
+  min-width: 0
+  overflow-wrap: anywhere
+  p
+    margin: 0 0 0.75em
+  pre
+    padding: 12px
+    border-radius: 8px
+    overflow-x: auto
+    background: rgba(127, 127, 127, 0.15)
+  code
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
+    font-size: 0.9em
+  :not(pre) > code
+    padding: 1px 4px
+    border-radius: 4px
+    background: rgba(127, 127, 127, 0.15)
+  table
+    display: block
+    max-width: 100%
+    overflow-x: auto
+    border-collapse: collapse
+  th, td
+    border: 1px solid rgba(127, 127, 127, 0.35)
+    padding: 4px 8px
+
+// Light-theme note colours (>= 4.5:1 on white); dark defaults are in MessageBubble.vue.
+body.body--light
+  .message__note--warning
+    color: #b45309
+  .message__note--negative
+    color: #b91c1c

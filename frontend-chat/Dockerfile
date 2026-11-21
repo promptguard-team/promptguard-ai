@@ -1,13 +1,15 @@
 # Base
-FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS base
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS base
 
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
 # Development
-FROM base as dev
+FROM base AS dev
 
+# Vite writes its cache under node_modules/.vite; the dev server runs as `node`.
+RUN chown -R node:node /app
 USER node
 
 EXPOSE 5173
@@ -23,6 +25,7 @@ RUN npm run build
 # Production
 FROM nginxinc/nginx-unprivileged:alpine AS prod
 
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 8080
