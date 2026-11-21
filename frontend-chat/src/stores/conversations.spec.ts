@@ -164,6 +164,10 @@ describe('stores/conversations', () => {
     const store = useConversationsStore();
     store.load('u1');
     const id = await store.send(null, 'persisted');
+    send.mockRejectedValueOnce(new ApiError('forbidden', 403));
+    await store.send(id, 'bad');
+    send.mockRejectedValueOnce(new ApiError('provider', 502));
+    await store.send(id, 'flaky');
 
     const raw = localStorage.getItem(storageKey('u1'));
     expect(raw).not.toBeNull();
@@ -172,7 +176,119 @@ describe('stores/conversations', () => {
     setActivePinia(createPinia());
     const fresh = useConversationsStore();
     fresh.load('u1');
-    expect(fresh.get(id)?.messages).toHaveLength(2);
+    expect(fresh.get(id)?.messages.map((m) => [m.role, m.status, m.text, m.errorKind])).toEqual([
+      ['user', 'ok', 'persisted', undefined],
+      ['assistant', 'ok', 'r', undefined],
+      ['user', 'blocked', 'bad', undefined],
+      ['user', 'ok', 'flaky', undefined],
+      ['assistant', 'error', '', 'provider'],
+    ]);
+  });
+
+  it('turns a sending placeholder left in storage into a retryable network error', async () => {
+    pending();
+    const store = useConversationsStore();
+    store.load('u1');
+    void store.send(null, 'hello');
+    await Promise.resolve();
+    const stuckId = store.sorted[0]!.id;
+
+    setActivePinia(createPinia());
+    const fresh = useConversationsStore();
+    fresh.load('u1');
+    expect(fresh.get(stuckId)!.messages.at(-1)).toMatchObject({
+      role: 'assistant',
+      status: 'error',
+      errorKind: 'network',
+      text: '',
+    });
+
+    send.mockResolvedValueOnce({ response: 'recovered', blocked: false });
+    await fresh.retry(stuckId, fresh.get(stuckId)!.messages.at(-1)!.id);
+    expect(fresh.get(stuckId)!.messages.at(-1)).toMatchObject({ status: 'ok', text: 'recovered' });
+  });
+
+  it('ignores a late reply for a conversation that was unloaded and reloaded', async () => {
+    const first = pending();
+    const store = useConversationsStore();
+    store.load('u1');
+    const firstSend = store.send(null, 'one');
+    await Promise.resolve();
+    const id = store.sorted[0]!.id;
+
+    store.unload();
+    expect(store.sending).toBe(false);
+    store.load('u1');
+    const second = pending();
+    const secondSend = store.send(id, 'two');
+    await Promise.resolve();
+    expect(store.sending).toBe(true);
+
+    first.resolve({ response: 'late', blocked: false });
+    await firstSend;
+    expect(store.sending).toBe(true);
+    expect(store.get(id)!.messages.map((m) => m.text)).not.toContain('late');
+
+    second.resolve({ response: 'fresh', blocked: false });
+    await secondSend;
+    expect(store.sending).toBe(false);
+    expect(store.get(id)!.messages.at(-1)).toMatchObject({ status: 'ok', text: 'fresh' });
+  });
+
+  it('leaves a conversation removed mid-flight alone and releases the input', async () => {
+    const { resolve } = pending();
+    const store = useConversationsStore();
+    store.load('u1');
+    const promise = store.send(null, 'hello');
+    await Promise.resolve();
+    const conversation = store.sorted[0]!;
+
+    store.remove(conversation.id);
+    resolve({ response: 'late', blocked: false });
+    await promise;
+
+    expect(store.sending).toBe(false);
+    expect(conversation.messages.at(-1)).toMatchObject({ status: 'sending' });
+    expect(localStorage.getItem(storageKey('u1'))).not.toContain(conversation.id);
+  });
+
+  it('ignores send and retry while a request is in flight', async () => {
+    send.mockRejectedValueOnce(new ApiError('provider', 502));
+    const store = useConversationsStore();
+    store.load('u1');
+    const id = await store.send(null, 'one');
+    const errorId = store.get(id)!.messages.at(-1)!.id;
+
+    const { resolve } = pending();
+    const other = store.send(null, 'other');
+    await Promise.resolve();
+    expect(send).toHaveBeenCalledTimes(2);
+
+    expect(await store.send(id, 'ignored')).toBe(id);
+    expect(await store.send(null, 'ignored')).toBe('');
+    await store.retry(id, errorId);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(store.get(id)!.messages).toHaveLength(2);
+    expect(store.conversations).toHaveLength(2);
+
+    resolve({ response: 'r', blocked: false });
+    await other;
+  });
+
+  it('does not retry an error that is no longer the last message', async () => {
+    send.mockRejectedValueOnce(new ApiError('provider', 502));
+    const store = useConversationsStore();
+    store.load('u1');
+    const id = await store.send(null, 'one');
+    const errorId = store.get(id)!.messages.at(-1)!.id;
+    send.mockResolvedValueOnce({ response: 'r', blocked: false });
+    await store.send(id, 'two');
+    const before = JSON.stringify(store.get(id)!.messages);
+
+    await store.retry(id, errorId);
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(store.get(id)!.messages)).toBe(before);
   });
 
   it('keeps users apart', async () => {
@@ -195,5 +311,27 @@ describe('stores/conversations', () => {
     localStorage.setItem(storageKey('u1'), 'garbage');
     store.load('u1');
     expect(store.sorted).toHaveLength(0);
+  });
+
+  it('drops malformed stored conversations and keeps the valid ones', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const valid = {
+      id: 'ok',
+      title: 't',
+      createdAt: 1,
+      updatedAt: 2,
+      messages: [{ id: 'm', role: 'user', text: 'hi', status: 'ok', createdAt: 1 }],
+    };
+    const badMessage = { ...valid, id: 'bad', messages: [{ id: 'm', role: 'robot' }] };
+    localStorage.setItem(
+      storageKey('u1'),
+      JSON.stringify({ version: 1, conversations: [null, {}, badMessage, valid] }),
+    );
+    const store = useConversationsStore();
+    store.load('u1');
+
+    expect(store.sorted.map((c) => c.id)).toEqual(['ok']);
+    expect(store.get('ok')!.messages).toHaveLength(1);
+    expect(warn).toHaveBeenCalledOnce();
   });
 });

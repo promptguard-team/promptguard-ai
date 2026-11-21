@@ -3,36 +3,18 @@ import { defineStore } from 'pinia';
 import { sendPrompt } from '@/api/chat';
 import { ApiError } from '@/api/client';
 import { newId } from '@/ids';
-import { readJson, writeJson } from '@/storage/local';
+import { readConversations, writeConversations } from './conversationStorage';
 import type { Conversation, Message, MessageErrorKind } from './types';
 
-const STORAGE_PREFIX = 'promptguard.chat.v1.';
-const STORAGE_VERSION = 1;
+export { storageKey } from './conversationStorage';
+
 const TITLE_MAX = 40;
 
 export const PROMPT_MAX = 32000;
 
-interface StoredState {
-  version: number;
-  conversations: Conversation[];
-}
-
-export function storageKey(userId: string): string {
-  return `${STORAGE_PREFIX}${userId}`;
-}
-
 export function makeTitle(text: string): string {
   const compact = text.trim().replace(/\s+/g, ' ');
   return compact.length <= TITLE_MAX ? compact : `${compact.slice(0, TITLE_MAX - 1)}…`;
-}
-
-function isStoredState(value: unknown): value is StoredState {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as StoredState).version === STORAGE_VERSION &&
-    Array.isArray((value as StoredState).conversations)
-  );
 }
 
 function errorKindOf(error: unknown): MessageErrorKind {
@@ -48,37 +30,27 @@ export const useConversationsStore = defineStore('conversations', () => {
   const conversations = ref<Conversation[]>([]);
   const userId = ref<string | null>(null);
   const sending = ref(false);
+  /** Identifies the request that owns `sending`; a stale request must not release it. */
+  let activeRequest: symbol | null = null;
 
   const sorted = computed(() => [...conversations.value].sort((a, b) => b.updatedAt - a.updatedAt));
 
   function load(id: string): void {
     userId.value = id;
-    const stored = readJson<unknown>(storageKey(id));
-    if (stored === null) {
-      conversations.value = [];
-      return;
-    }
-    if (!isStoredState(stored)) {
-      console.warn('conversation storage has an unexpected shape, starting empty');
-      conversations.value = [];
-      return;
-    }
-    conversations.value = stored.conversations;
+    conversations.value = readConversations(id);
   }
 
   function unload(): void {
     userId.value = null;
     conversations.value = [];
+    sending.value = false;
+    activeRequest = null;
   }
 
   function persist(): void {
-    if (userId.value === null) {
-      return;
+    if (userId.value !== null) {
+      writeConversations(userId.value, conversations.value);
     }
-    writeJson(storageKey(userId.value), {
-      version: STORAGE_VERSION,
-      conversations: conversations.value,
-    } satisfies StoredState);
   }
 
   function get(id: string): Conversation | undefined {
@@ -94,8 +66,15 @@ export const useConversationsStore = defineStore('conversations', () => {
     persist();
   }
 
-  /** Appends a user message (creating the conversation when needed) and requests a reply. */
+  /**
+   * Appends a user message (creating the conversation when needed) and requests a reply.
+   * Resolves to the conversation id. While another request is in flight this is a no-op that
+   * resolves to the given id, or '' when none was given, so callers never navigate on it.
+   */
   async function send(conversationId: string | null, text: string): Promise<string> {
+    if (sending.value) {
+      return conversationId ?? '';
+    }
     const now = Date.now();
     let conversation = conversationId === null ? undefined : get(conversationId);
     if (conversation === undefined) {
@@ -114,21 +93,24 @@ export const useConversationsStore = defineStore('conversations', () => {
     return conversation.id;
   }
 
-  /** Re-sends the prompt that produced an error message, replacing that message. */
+  /**
+   * Re-sends the prompt that produced an error message, replacing that message. Only the last
+   * message of a conversation can be retried, and never while another request is in flight.
+   */
   async function retry(conversationId: string, messageId: string): Promise<void> {
     const conversation = get(conversationId);
-    if (conversation === undefined) {
+    if (sending.value || conversation === undefined) {
       return;
     }
-    const index = conversation.messages.findIndex((m) => m.id === messageId);
-    if (index === -1 || conversation.messages[index]!.status !== 'error') {
+    const last = conversation.messages.at(-1);
+    if (last === undefined || last.id !== messageId || last.status !== 'error') {
       return;
     }
-    const prompt = conversation.messages.slice(0, index).findLast((m) => m.role === 'user');
+    const prompt = conversation.messages.findLast((m) => m.role === 'user');
     if (prompt === undefined) {
       return;
     }
-    conversation.messages.splice(index, 1);
+    conversation.messages.pop();
     await deliver(conversation, prompt.text);
   }
 
@@ -142,19 +124,31 @@ export const useConversationsStore = defineStore('conversations', () => {
     });
     const placeholder: Message = conversation.messages[conversation.messages.length - 1]!;
     conversation.updatedAt = Date.now();
+    const request = Symbol('request');
+    activeRequest = request;
     sending.value = true;
     persist();
+    let settle: () => void;
     try {
       const result = await sendPrompt(prompt);
-      placeholder.status = result.blocked ? 'blocked' : 'ok';
-      placeholder.text = result.blocked ? '' : result.response;
+      settle = () => {
+        placeholder.status = result.blocked ? 'blocked' : 'ok';
+        placeholder.text = result.blocked ? '' : result.response;
+      };
     } catch (error) {
-      applyFailure(conversation, placeholder, error);
-    } finally {
-      conversation.updatedAt = Date.now();
-      sending.value = false;
-      persist();
+      settle = () => applyFailure(conversation, placeholder, error);
     }
+    if (activeRequest === request) {
+      activeRequest = null;
+      sending.value = false;
+    }
+    // The conversation may have been removed, or the store unloaded, while the request ran.
+    if (get(conversation.id) !== conversation) {
+      return;
+    }
+    settle();
+    conversation.updatedAt = Date.now();
+    persist();
   }
 
   function applyFailure(conversation: Conversation, placeholder: Message, error: unknown): void {
