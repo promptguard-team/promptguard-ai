@@ -28,7 +28,7 @@ const errorCopy = computed(() =>
       <div class="message__bubble">
         <div class="message__text">{{ message.text }}</div>
       </div>
-      <div v-if="message.status === 'blocked'" class="message__note text-warning">
+      <div v-if="message.status === 'blocked'" class="message__note message__note--warning">
         <q-icon name="shield" size="16px" />
         <span>{{ t('chat.promptBlocked') }}</span>
       </div>
@@ -39,17 +39,18 @@ const errorCopy = computed(() =>
         v-if="message.status === 'sending'"
         data-test="typing"
         class="message__typing"
+        role="status"
         :aria-label="t('chat.thinking')"
       >
-        <span /><span /><span />
+        <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
       </div>
       <!-- Sanitised by renderMarkdown (src/markdown.ts); v-html is safe here. -->
       <div v-else-if="message.status === 'ok'" class="markdown" v-html="html" />
-      <div v-else-if="message.status === 'blocked'" class="message__note text-warning">
+      <div v-else-if="message.status === 'blocked'" class="message__note message__note--warning">
         <q-icon name="shield" size="16px" />
         <span>{{ t('chat.responseBlocked') }}</span>
       </div>
-      <div v-else class="message__note text-negative">
+      <div v-else class="message__note message__note--negative">
         <q-icon name="error_outline" size="16px" />
         <span>{{ errorCopy }}</span>
         <q-btn
@@ -73,6 +74,7 @@ const errorCopy = computed(() =>
   flex-direction: column
   gap: 6px
   margin: 12px 0
+  max-width: 100%
 
 .message--user
   align-items: flex-end
@@ -85,13 +87,21 @@ const errorCopy = computed(() =>
 
 .message__text
   white-space: pre-wrap
-  word-break: break-word
+  overflow-wrap: anywhere
 
 .message__note
   display: inline-flex
   align-items: center
   gap: 6px
   font-size: 13px
+
+// Dark-theme colours (default); light overrides live in styles/app.sass because
+// scoped :global() drops the descendant selector. Both reach WCAG AA (>= 4.5:1).
+.message__note--warning
+  color: #fbbf24
+
+.message__note--negative
+  color: #f87171
 
 .message__typing
   display: inline-flex
@@ -108,6 +118,10 @@ const errorCopy = computed(() =>
       animation-delay: 0.2s
     &:nth-child(3)
       animation-delay: 0.4s
+
+@media (prefers-reduced-motion: reduce)
+  .message__typing span
+    animation: none
 
 @keyframes pulse
   0%, 80%, 100%

@@ -5,6 +5,8 @@ body
 // Rendered LLM markdown.
 .markdown
   line-height: 1.6
+  min-width: 0
+  overflow-wrap: anywhere
   p
     margin: 0 0 0.75em
   pre
@@ -20,7 +22,17 @@ body
     border-radius: 4px
     background: rgba(127, 127, 127, 0.15)
   table
+    display: block
+    max-width: 100%
+    overflow-x: auto
     border-collapse: collapse
   th, td
     border: 1px solid rgba(127, 127, 127, 0.35)
     padding: 4px 8px
+
+// Light-theme note colours (>= 4.5:1 on white); dark defaults are in MessageBubble.vue.
+body.body--light
+  .message__note--warning
+    color: #b45309
+  .message__note--negative
+    color: #b91c1c

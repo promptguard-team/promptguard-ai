@@ -62,4 +62,52 @@ describe('MessageBubble', () => {
     expect(wrapper.text()).toContain('Nie udało się połączyć z serwerem.');
     expect(wrapper.find('[data-test="retry"]').exists()).toBe(false);
   });
+
+  it('strips active content from assistant markdown', () => {
+    const wrapper = mountBubble(
+      msg({
+        text: '<img src=x onerror=alert(1)>\n\n[x](javascript:alert(1))\n\n<script>alert(1)</script>',
+      }),
+    );
+    const root = wrapper.find('.markdown');
+    expect(root.find('img').exists()).toBe(false);
+    expect(root.find('script').exists()).toBe(false);
+    expect(root.find('[href]').exists()).toBe(false);
+    expect(root.find('a').exists()).toBe(false);
+  });
+
+  it('keeps newlines in a user message', () => {
+    const wrapper = mountBubble(msg({ role: 'user', text: 'line1\nline2' }));
+    expect(wrapper.find('.message__text').text()).toBe('line1\nline2');
+  });
+
+  it('has no retry button for ok and blocked messages', () => {
+    expect(
+      mountBubble(msg({ status: 'ok', text: 'hi' }))
+        .find('[data-test="retry"]')
+        .exists(),
+    ).toBe(false);
+    expect(
+      mountBubble(msg({ status: 'blocked' }))
+        .find('[data-test="retry"]')
+        .exists(),
+    ).toBe(false);
+  });
+
+  it('falls back to the network copy when errorKind is missing', () => {
+    const wrapper = mountBubble(msg({ status: 'error' }));
+    expect(wrapper.text()).toContain('Nie udało się połączyć z serwerem.');
+  });
+
+  it('exposes the typing indicator as a status', () => {
+    const wrapper = mountBubble(msg({ status: 'sending' }));
+    expect(wrapper.find('[data-test="typing"]').attributes('role')).toBe('status');
+  });
+
+  it('marks notes with theme-aware modifier classes', () => {
+    const blocked = mountBubble(msg({ status: 'blocked' }));
+    expect(blocked.find('.message__note').classes()).toContain('message__note--warning');
+    const error = mountBubble(msg({ status: 'error', errorKind: 'network' }));
+    expect(error.find('.message__note').classes()).toContain('message__note--negative');
+  });
 });
