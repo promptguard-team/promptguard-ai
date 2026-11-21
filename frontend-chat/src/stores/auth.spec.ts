@@ -45,6 +45,7 @@ describe('stores/auth', () => {
   it('keeps the token when /auth/me fails for a network reason', async () => {
     localStorage.setItem(TOKEN_KEY, 'kept');
     vi.mocked(authApi.me).mockRejectedValue(new ApiError('network'));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     const store = useAuthStore();
     await store.bootstrap();
     expect(store.isAuthenticated).toBe(false);
@@ -89,5 +90,24 @@ describe('stores/auth', () => {
     expect(store.isAuthenticated).toBe(false);
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(localStorage.getItem('promptguard.chat.v1.u1')).not.toBeNull();
+  });
+
+  it('concurrent bootstrap calls share one request and both see the user', async () => {
+    localStorage.setItem(TOKEN_KEY, 'stored');
+    vi.mocked(authApi.me).mockResolvedValue(user);
+    const store = useAuthStore();
+    await Promise.all([store.bootstrap(), store.bootstrap()]);
+    expect(authApi.me).toHaveBeenCalledOnce();
+    expect(store.isAuthenticated).toBe(true);
+    expect(store.bootstrapped).toBe(true);
+  });
+
+  it('login clears the token when /auth/me fails afterwards', async () => {
+    vi.mocked(authApi.login).mockResolvedValue({ access_token: 'new', token_type: 'bearer' });
+    vi.mocked(authApi.me).mockRejectedValue(new ApiError('network'));
+    const store = useAuthStore();
+    await expect(store.login('a@b.pl', 'secret')).rejects.toBeInstanceOf(ApiError);
+    expect(store.token).toBeNull();
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
   });
 });

@@ -10,6 +10,7 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(readString(TOKEN_KEY));
   const user = ref<User | null>(null);
   const bootstrapped = ref(false);
+  let bootstrapping: Promise<void> | null = null;
 
   const isAuthenticated = computed(() => user.value !== null);
 
@@ -19,12 +20,7 @@ export const useAuthStore = defineStore('auth', () => {
     removeKey(TOKEN_KEY);
   }
 
-  /** Resolves the stored token into a user once per app start. */
-  async function bootstrap(): Promise<void> {
-    if (bootstrapped.value) {
-      return;
-    }
-    bootstrapped.value = true;
+  async function resolveStoredToken(): Promise<void> {
     if (!token.value) {
       return;
     }
@@ -36,14 +32,29 @@ export const useAuthStore = defineStore('auth', () => {
         return;
       }
       // Network or server trouble: keep the token, the guard sends the user to /login.
+      console.warn('could not restore the session', error);
     }
+  }
+
+  /** Resolves the stored token into a user once per app start; concurrent callers share the result. */
+  function bootstrap(): Promise<void> {
+    bootstrapping ??= resolveStoredToken().finally(() => {
+      bootstrapped.value = true;
+    });
+    return bootstrapping;
   }
 
   async function login(email: string, password: string): Promise<void> {
     const result = await apiLogin(email, password);
     token.value = result.access_token;
     writeString(TOKEN_KEY, result.access_token);
-    user.value = await me();
+    try {
+      user.value = await me();
+    } catch (error) {
+      // Never keep a token we could not resolve into a user.
+      clearSession();
+      throw error;
+    }
   }
 
   return { token, user, bootstrapped, isAuthenticated, bootstrap, login, clearSession };
