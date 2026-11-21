@@ -67,6 +67,24 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
 
   /**
+   * Creates an empty conversation titled after `text` and returns its id. Lets callers route to
+   * a new conversation before its first reply arrives.
+   */
+  function create(text: string): string {
+    const now = Date.now();
+    const id = newId();
+    conversations.value.push({
+      id,
+      title: makeTitle(text),
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+    });
+    persist();
+    return id;
+  }
+
+  /**
    * Appends a user message (creating the conversation when needed) and requests a reply.
    * Resolves to the conversation id. While another request is in flight this is a no-op that
    * resolves to the given id, or '' when none was given, so callers never navigate on it.
@@ -75,20 +93,16 @@ export const useConversationsStore = defineStore('conversations', () => {
     if (sending.value) {
       return conversationId ?? '';
     }
-    const now = Date.now();
-    let conversation = conversationId === null ? undefined : get(conversationId);
-    if (conversation === undefined) {
-      conversations.value.push({
-        id: newId(),
-        title: makeTitle(text),
-        createdAt: now,
-        updatedAt: now,
-        messages: [],
-      });
-      // Re-read through the reactive array; the pushed literal is not reactive.
-      conversation = conversations.value[conversations.value.length - 1]!;
-    }
-    conversation.messages.push({ id: newId(), role: 'user', text, status: 'ok', createdAt: now });
+    // Read through the reactive array; a freshly pushed literal is not reactive.
+    const conversation =
+      (conversationId === null ? undefined : get(conversationId)) ?? get(create(text))!;
+    conversation.messages.push({
+      id: newId(),
+      role: 'user',
+      text,
+      status: 'ok',
+      createdAt: Date.now(),
+    });
     await deliver(conversation, text);
     return conversation.id;
   }
@@ -164,5 +178,18 @@ export const useConversationsStore = defineStore('conversations', () => {
     placeholder.errorKind = errorKindOf(error);
   }
 
-  return { conversations, userId, sending, sorted, load, unload, get, has, remove, send, retry };
+  return {
+    conversations,
+    userId,
+    sending,
+    sorted,
+    load,
+    unload,
+    get,
+    has,
+    remove,
+    create,
+    send,
+    retry,
+  };
 });

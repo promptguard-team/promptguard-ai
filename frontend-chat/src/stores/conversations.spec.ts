@@ -139,6 +139,33 @@ describe('stores/conversations', () => {
     expect(store.get(first)!.updatedAt).toBeGreaterThan(before);
   });
 
+  it('create adds an empty, persisted conversation titled from the text', () => {
+    const store = useConversationsStore();
+    store.load('u1');
+
+    const id = store.create('  first   prompt ');
+
+    const conversation = store.get(id)!;
+    expect(conversation).toMatchObject({ title: 'first prompt', messages: [] });
+    expect(conversation.updatedAt).toBe(conversation.createdAt);
+    expect(send).not.toHaveBeenCalled();
+    store.load('u1');
+    expect(store.get(id)).toMatchObject({ title: 'first prompt', messages: [] });
+  });
+
+  it('send into a created conversation reuses it instead of making another', async () => {
+    send.mockResolvedValue({ response: 'r', blocked: false });
+    const store = useConversationsStore();
+    store.load('u1');
+
+    const id = store.create('hello');
+    const sent = await store.send(id, 'hello');
+
+    expect(sent).toBe(id);
+    expect(store.sorted).toHaveLength(1);
+    expect(store.get(id)!.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+  });
+
   it('sorts newest first', async () => {
     send.mockResolvedValue({ response: 'r', blocked: false });
     const store = useConversationsStore();
