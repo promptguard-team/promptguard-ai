@@ -5,18 +5,13 @@ export interface GuardDeps {
   bootstrap: () => Promise<void>;
   isAuthenticated: () => boolean;
   userId: () => string | null;
+  /** The user whose conversations are currently loaded, or null after unload. */
+  loadedUserId: () => string | null;
   loadConversations: (userId: string) => void;
   hasConversation: (id: string) => boolean;
 }
 
 export const CONVERSATION_ROUTE = 'conversation';
-
-/** The user whose conversations are loaded; reset on logout and session expiry. */
-let loadedFor: string | null = null;
-
-export function resetGuardState(): void {
-  loadedFor = null;
-}
 
 export async function authGuard(
   to: RouteLocationNormalized,
@@ -34,9 +29,8 @@ export async function authGuard(
 
   if (authenticated) {
     const userId = deps.userId();
-    if (userId !== null && userId !== loadedFor) {
+    if (userId !== null && userId !== deps.loadedUserId()) {
       deps.loadConversations(userId);
-      loadedFor = userId;
     }
     if (to.name === CONVERSATION_ROUTE) {
       const id = String(to.params.id ?? '');

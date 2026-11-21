@@ -27,6 +27,7 @@ router.beforeEach((to) => {
     bootstrap: () => auth.bootstrap(),
     isAuthenticated: () => auth.isAuthenticated,
     userId: () => auth.user?.id ?? null,
+    loadedUserId: () => conversations.userId,
     loadConversations: (userId) => conversations.load(userId),
     hasConversation: (id) => conversations.has(id),
   });

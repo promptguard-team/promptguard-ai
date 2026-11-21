@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { RouteLocationNormalized } from 'vue-router';
-import { authGuard, resetGuardState, type GuardDeps } from './guard';
+import { authGuard, type GuardDeps } from './guard';
 
 function route(
   path: string,
@@ -25,6 +25,7 @@ function deps(overrides: Partial<GuardDeps> = {}): GuardDeps {
     bootstrap: vi.fn().mockResolvedValue(undefined),
     isAuthenticated: () => false,
     userId: () => null,
+    loadedUserId: () => null,
     loadConversations: vi.fn(),
     hasConversation: () => true,
     ...overrides,
@@ -32,10 +33,6 @@ function deps(overrides: Partial<GuardDeps> = {}): GuardDeps {
 }
 
 describe('authGuard', () => {
-  beforeEach(() => {
-    resetGuardState();
-  });
-
   it('awaits bootstrap before deciding', async () => {
     const d = deps();
     await authGuard(route('/login'), d);
@@ -56,12 +53,58 @@ describe('authGuard', () => {
     expect(await authGuard(route('/login'), d)).toEqual({ path: '/' });
   });
 
+  /** Simulates the conversations store: load() records the user, unload() clears it. */
+  function authedAs(user: { id: string | null }): { d: GuardDeps; unload: () => void } {
+    let loaded: string | null = null;
+    const d = deps({
+      isAuthenticated: () => user.id !== null,
+      userId: () => user.id,
+      loadedUserId: () => loaded,
+      loadConversations: vi.fn((id: string) => {
+        loaded = id;
+      }),
+    });
+    return {
+      d,
+      unload: () => {
+        loaded = null;
+      },
+    };
+  }
+
+  const home = (): RouteLocationNormalized => route('/', { meta: { requiresAuth: true } });
+
   it('loads the conversations for the authenticated user once', async () => {
-    const d = deps({ isAuthenticated: () => true, userId: () => 'u1' });
-    await authGuard(route('/', { meta: { requiresAuth: true } }), d);
-    await authGuard(route('/', { meta: { requiresAuth: true } }), d);
+    const { d } = authedAs({ id: 'u1' });
+    await authGuard(home(), d);
+    await authGuard(home(), d);
     expect(d.loadConversations).toHaveBeenCalledOnce();
     expect(d.loadConversations).toHaveBeenCalledWith('u1');
+  });
+
+  it('reloads the conversations after the store was unloaded', async () => {
+    const { d, unload } = authedAs({ id: 'u1' });
+    await authGuard(home(), d);
+    unload();
+    await authGuard(home(), d);
+    expect(d.loadConversations).toHaveBeenCalledTimes(2);
+  });
+
+  it('reloads the conversations when the user changes', async () => {
+    const user = { id: 'u1' as string | null };
+    const { d } = authedAs(user);
+    await authGuard(home(), d);
+    user.id = 'u2';
+    await authGuard(home(), d);
+    expect(d.loadConversations).toHaveBeenCalledTimes(2);
+    expect(d.loadConversations).toHaveBeenLastCalledWith('u2');
+  });
+
+  it('does not load conversations when unauthenticated', async () => {
+    const { d } = authedAs({ id: null });
+    await authGuard(route('/login'), d);
+    await authGuard(home(), d);
+    expect(d.loadConversations).not.toHaveBeenCalled();
   });
 
   it('redirects an unknown conversation id to /', async () => {

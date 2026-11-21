@@ -10,7 +10,6 @@ import { i18n } from './i18n';
 import { router } from './router';
 import { useAuthStore } from './stores/auth';
 import { useConversationsStore } from './stores/conversations';
-import { resetGuardState } from './router/guard';
 
 const app = createApp(App);
 app.use(createPinia());
@@ -24,7 +23,6 @@ configureClient({
   onUnauthorized: () => {
     auth.clearSession();
     conversations.unload();
-    resetGuardState();
     void router.push({ path: '/login', query: { reason: 'expired' } });
   },
 });
