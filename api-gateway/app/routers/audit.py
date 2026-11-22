@@ -16,7 +16,10 @@ from app.schemas import (
     AuditEventPage,
     AuditEventSummary,
     AuditStats,
+    AuditTimeseries,
+    TimeseriesPoint,
 )
+from app.timeseries import MAX_WINDOW, Bucket, bucket_starts, fold_hours
 
 router = APIRouter(
     prefix="/audit", tags=["audit"], dependencies=[Depends(require_ciso)]
@@ -146,6 +149,61 @@ async def get_stats(
         by_action=by_action,
         flagged=flagged,
         ml_unavailable=ml_unavailable,
+    )
+
+
+def _utc_hour(session: AsyncSession) -> ColumnElement:
+    """created_at truncated to its UTC hour, in the session's SQL dialect."""
+    if session.get_bind().dialect.name == "postgresql":
+        # timezone('UTC', ...) first, so date_trunc ignores the session TimeZone.
+        return func.date_trunc("hour", func.timezone("UTC", AuditEvent.created_at))
+    # SQLite (tests) stores the UTC wall-clock digits as text.
+    return func.strftime("%Y-%m-%d %H:00:00", AuditEvent.created_at)
+
+
+def _as_utc_hour(value: datetime | str) -> datetime:
+    """Normalise a driver's hour value (aware, naive UTC, or SQLite text)."""
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+@router.get("/timeseries", response_model=AuditTimeseries)
+async def get_timeseries(
+    bucket: Bucket,
+    window: TimeWindow = Depends(time_window),
+    session: AsyncSession = Depends(get_session),
+) -> AuditTimeseries:
+    """Count audit events per action in hourly or Warsaw-daily buckets."""
+    if window.start is None or window.end is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="'from' and 'to' are required",
+        )
+    if window.end - window.start > MAX_WINDOW[bucket]:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"'{bucket.value}' buckets cover at most {MAX_WINDOW[bucket].days} days"
+            ),
+        )
+
+    hour = _utc_hour(session).label("hour")
+    rows = await session.execute(
+        select(hour, AuditEvent.action, func.count())
+        .where(*_window_clauses(window))
+        .group_by(hour, AuditEvent.action)
+    )
+    hourly = ((_as_utc_hour(h), action, count) for h, action, count in rows)
+    starts = bucket_starts(window.start, window.end, bucket)
+    return AuditTimeseries(
+        bucket=bucket,
+        points=[
+            TimeseriesPoint(start=start, by_action=by_action)
+            for start, by_action in fold_hours(hourly, starts, bucket)
+        ],
     )
 
 
