@@ -32,7 +32,7 @@ Node 22.22.2+ or 24.15+ (`nvm install 22`).
 ## Base path `/ciso/`
 
 The app is built and served under `/ciso/` (`base` in `vite.config.ts`). Any proxy in front of
-it, whether the compose `nginx` or a future k8s ingress, must forward `/ciso/` **without
+it, whether the compose `reverse_proxy` (nginx/default.conf) or a future k8s ingress, must forward `/ciso/` **without
 stripping the prefix**.
 
 ## Dev proxy
@@ -43,7 +43,7 @@ stripping the prefix**.
 DEV_API_TARGET=http://localhost:9000 npm run dev
 ```
 
-Behind the compose nginx, `HMR_CLIENT_PORT=8080` (set in `docker-compose.yml`) lets HMR connect
+Behind the compose `reverse_proxy` (nginx/default.conf), `HMR_CLIENT_PORT=8080` (set in `docker-compose.yml`) lets HMR connect
 through the proxy port.
 
 ## Docker Compose
@@ -52,7 +52,7 @@ The first `docker compose up` after replacing the old mock frontend must recreat
 `node_modules` volume:
 
 ```bash
-docker compose up -d --build -V ciso nginx
+docker compose up -d --build -V ciso reverse_proxy
 ```
 
 The panel is then at <http://localhost:8080/ciso/>.
