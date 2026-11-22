@@ -73,6 +73,11 @@ function onRequest(request: { pagination: { page: number; rowsPerPage: number } 
   emit('paginate', request.pagination.page, size);
 }
 
+// QTable only reads the `pagination` prop live when an update:pagination listener exists;
+// otherwise it copies it once at setup. In server mode it emits only `request`, and the URL
+// holds the state, so this listener intentionally does nothing.
+function noopPaginationUpdate(): void {}
+
 function paginationLabel(first: number, last: number, total: number): string {
   return t('events.pagination', { first, last, total });
 }
@@ -92,6 +97,7 @@ function paginationLabel(first: number, last: number, total: number): string {
     :pagination-label="paginationLabel"
     :no-data-label="t('events.empty')"
     @request="onRequest"
+    @update:pagination="noopPaginationUpdate"
   >
     <template #body-cell-user_email="cell">
       <q-td :props="cell">
