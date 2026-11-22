@@ -1,4 +1,4 @@
-import { shallowRef, watch, type Ref } from 'vue';
+import { readonly, shallowRef, watch, type Ref } from 'vue';
 import { BLOCKED_ACTIONS, getStats, getTimeseries, listEvents } from '@/api/audit';
 import { useRequest } from '@/composables/useRequest';
 import { presetRange, type RangePreset } from '@/time/ranges';
@@ -28,5 +28,5 @@ export function useDashboard(preset: Ref<RangePreset>) {
 
   watch(preset, refresh, { immediate: true });
 
-  return { range, stats, trend, recent, refresh };
+  return { range: readonly(range), stats, trend, recent, refresh };
 }

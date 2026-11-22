@@ -1,4 +1,4 @@
-import type { LocationQuery, LocationQueryRaw, LocationQueryValue } from 'vue-router';
+import type { LocationQueryRaw } from 'vue-router';
 import {
   isAuditAction,
   isMlStatus,
@@ -51,22 +51,21 @@ export function defaultEventFilters(): EventFilters {
   };
 }
 
-type RawValue = LocationQueryValue | LocationQueryValue[] | undefined;
-
-function single(value: RawValue): string | null {
+function single(value: unknown): string | null {
   const first = Array.isArray(value) ? value[0] : value;
   return typeof first === 'string' ? first : null;
 }
 
-function many(value: RawValue): string[] {
+function many(value: unknown): string[] {
   const values = Array.isArray(value) ? value : [value];
   return values.filter((item): item is string => typeof item === 'string');
 }
 
+const PAGE_PATTERN = /^[1-9]\d{0,5}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Reads filters from the URL; anything invalid falls back to its default. */
-export function parseEventQuery(query: LocationQuery): EventFilters {
+export function parseEventQuery(query: Readonly<Record<string, unknown>>): EventFilters {
   const filters = defaultEventFilters();
 
   const range = single(query.range);
@@ -94,12 +93,13 @@ export function parseEventQuery(query: LocationQuery): EventFilters {
     filters.userEmail = single(query.email);
   }
 
-  const page = Number(single(query.page));
-  if (Number.isInteger(page) && page >= 1) {
-    filters.page = page;
+  const page = single(query.page);
+  if (page !== null && PAGE_PATTERN.test(page)) {
+    filters.page = Number(page);
   }
-  if (single(query.size) === '50') {
-    filters.pageSize = 50;
+  const size = PAGE_SIZES.find((s) => String(s) === single(query.size));
+  if (size) {
+    filters.pageSize = size;
   }
   return filters;
 }

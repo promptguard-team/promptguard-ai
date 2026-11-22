@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type { LocationQuery } from 'vue-router';
 import { defaultEventFilters, eventListParams, parseEventQuery, toEventQuery } from './eventQuery';
 
 const UUID = '3f2b8c1e-4d5a-4b6c-8d7e-9f0a1b2c3d4e';
@@ -24,7 +23,7 @@ describe('eventQuery', () => {
       pageSize: 50 as const,
     };
 
-    expect(parseEventQuery(toEventQuery(filters) as LocationQuery)).toEqual(filters);
+    expect(parseEventQuery(toEventQuery(filters))).toEqual(filters);
   });
 
   it('omits defaults from the URL', () => {
@@ -44,6 +43,39 @@ describe('eventQuery', () => {
         size: '30',
       }),
     ).toEqual({ ...defaultEventFilters(), actions: ['blocked_prompt'] });
+  });
+
+  it.each(['\u00a03 ', ' 3 ', '1e2', '0x10', '1e20', '-1', '1.5', '1234567'])(
+    'rejects the page %j',
+    (page) => {
+      expect(parseEventQuery({ page }).page).toBe(1);
+    },
+  );
+
+  it('accepts a plain page number and any known size', () => {
+    expect(parseEventQuery({ page: '12', size: '50' })).toMatchObject({ page: 12, pageSize: 50 });
+    expect(parseEventQuery({ size: '25' }).pageSize).toBe(25);
+  });
+
+  it('takes the first value of a repeated scalar', () => {
+    expect(parseEventQuery({ range: ['24h', '30d'] }).range).toBe('24h');
+  });
+
+  it('tolerates null query values', () => {
+    expect(parseEventQuery({ flagged: null }).flagged).toBeNull();
+    expect(parseEventQuery({ action: [null, 'allowed'] }).actions).toEqual(['allowed']);
+  });
+
+  it('rejects an impossible custom day', () => {
+    const filters = parseEventQuery({ range: 'custom', from: '2026-02-30', to: '2026-03-02' });
+    expect(filters.range).toBe('7d');
+    expect(filters.fromDay).toBeNull();
+  });
+
+  it('keeps a valid user without an email', () => {
+    const filters = parseEventQuery({ user: UUID });
+    expect(filters.userId).toBe(UUID);
+    expect(filters.userEmail).toBeNull();
   });
 
   it('falls back to the default preset for a broken custom range', () => {

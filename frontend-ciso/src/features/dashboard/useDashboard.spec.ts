@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { effectScope, nextTick, ref } from 'vue';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { effectScope, nextTick, ref, type EffectScope } from 'vue';
 import { flushPromises } from '@vue/test-utils';
 import { getStats, getTimeseries, listEvents, type AuditStats } from '@/api/audit';
 import { ApiError } from '@/api/client';
@@ -19,7 +19,10 @@ const stats: AuditStats = {
 };
 
 describe('useDashboard', () => {
+  let scope: EffectScope;
+
   beforeEach(() => {
+    scope = effectScope();
     vi.mocked(getStats).mockReset().mockResolvedValue(stats);
     vi.mocked(getTimeseries).mockReset().mockResolvedValue({ bucket: 'day', points: [] });
     vi.mocked(listEvents)
@@ -27,9 +30,14 @@ describe('useDashboard', () => {
       .mockResolvedValue({ items: [], total: 0, limit: RECENT_LIMIT, offset: 0 });
   });
 
+  afterEach(() => {
+    scope.stop();
+    vi.useRealTimers();
+  });
+
   it('loads stats, the trend and recent blocks for the preset', async () => {
     const preset = ref<RangePreset>('7d');
-    const dashboard = effectScope().run(() => useDashboard(preset))!;
+    const dashboard = scope.run(() => useDashboard(preset))!;
     await flushPromises();
 
     expect(dashboard.stats.data).toEqual(stats);
@@ -50,7 +58,7 @@ describe('useDashboard', () => {
 
   it('reloads with hourly buckets when the preset changes', async () => {
     const preset = ref<RangePreset>('7d');
-    effectScope().run(() => useDashboard(preset));
+    scope.run(() => useDashboard(preset));
     await flushPromises();
 
     preset.value = '24h';
@@ -62,10 +70,28 @@ describe('useDashboard', () => {
 
   it('keeps one card working when another fails', async () => {
     vi.mocked(getStats).mockRejectedValue(new ApiError('http', 500));
-    const dashboard = effectScope().run(() => useDashboard(ref<RangePreset>('7d')))!;
+    const dashboard = scope.run(() => useDashboard(ref<RangePreset>('7d')))!;
     await flushPromises();
 
     expect(dashboard.stats.error?.kind).toBe('http');
     expect(dashboard.trend.data).toEqual({ bucket: 'day', points: [] });
+  });
+
+  it('recomputes now on refresh and reloads all three cards', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const t1 = new Date('2026-11-20T10:00:00Z');
+    const t2 = new Date('2026-11-20T10:05:00Z');
+    vi.setSystemTime(t1);
+    const dashboard = scope.run(() => useDashboard(ref<RangePreset>('7d')))!;
+    await flushPromises();
+
+    vi.setSystemTime(t2);
+    dashboard.refresh();
+    await flushPromises();
+
+    expect(getStats).toHaveBeenCalledTimes(2);
+    expect(getTimeseries).toHaveBeenCalledTimes(2);
+    expect(listEvents).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(getStats).mock.lastCall?.[0].to).toEqual(t2);
   });
 });

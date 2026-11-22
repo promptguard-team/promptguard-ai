@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Dark } from 'quasar';
+import { Bar } from 'vue-chartjs';
 import { mount } from '@vue/test-utils';
 import type { AuditEventSummary } from '@/api/audit';
 import { appPlugins } from '@/test/plugins';
@@ -91,6 +93,23 @@ describe('ActionDonut', () => {
 });
 
 describe('TrendChart', () => {
+  afterEach(() => Dark.set(false));
+
+  it.each([
+    [true, '#cbd5e1'],
+    [false, '#475569'],
+  ])('uses theme-aware tick colors (dark=%s)', (dark, color) => {
+    Dark.set(dark);
+    const wrapper = mount(TrendChart, {
+      props: { series: { bucket: 'hour', points: [] } },
+      global,
+    });
+    const options = wrapper.findComponent(Bar).props('options') as {
+      scales: { y: { ticks: { color: string } } };
+    };
+    expect(options.scales.y.ticks.color).toBe(color);
+  });
+
   it('renders the bar chart', () => {
     const wrapper = mount(TrendChart, {
       props: { series: { bucket: 'hour', points: [] } },
