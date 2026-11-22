@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type Router, type RouteRecordRaw } from
 import { useAuthStore } from '@/stores/auth';
 import LoginPage from '@/features/auth/LoginPage.vue';
 import AdminLayout from '@/features/layout/AdminLayout.vue';
+import DashboardPage from '@/features/dashboard/DashboardPage.vue';
 import { authGuard } from './guard';
 
 export const routes: RouteRecordRaw[] = [
@@ -11,7 +12,14 @@ export const routes: RouteRecordRaw[] = [
     component: AdminLayout,
     // Child routes inherit this through to.meta.
     meta: { requiresAuth: true },
-    children: [],
+    children: [
+      {
+        path: '',
+        name: 'dashboard',
+        component: DashboardPage,
+        meta: { titleKey: 'nav.dashboard' },
+      },
+    ],
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ];
