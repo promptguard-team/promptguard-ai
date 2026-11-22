@@ -1,11 +1,11 @@
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import AwareDatetime, BaseModel
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, DateTime, Select, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -56,6 +56,18 @@ def time_window(
     the dashboard runs in Europe/Warsaw and the column is UTC, so guessing
     either way would silently shift every window.
     """
+    return _build_window(from_, to)
+
+
+def required_time_window(
+    from_: AwareDatetime = Query(alias="from"),
+    to: AwareDatetime = Query(),
+) -> TimeWindow:
+    """Like `time_window`, but both bounds are mandatory (and documented so)."""
+    return _build_window(from_, to)
+
+
+def _build_window(from_: datetime | None, to: datetime | None) -> TimeWindow:
     if from_ is not None and to is not None and from_ >= to:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -152,11 +164,17 @@ async def get_stats(
     )
 
 
-def _utc_hour(session: AsyncSession) -> ColumnElement:
-    """created_at truncated to its UTC hour, in the session's SQL dialect."""
-    if session.get_bind().dialect.name == "postgresql":
+def _utc_hour(dialect_name: str) -> ColumnElement[Any]:
+    """created_at truncated to its UTC hour, in the given SQL dialect."""
+    if dialect_name == "postgresql":
         # timezone('UTC', ...) first, so date_trunc ignores the session TimeZone.
-        return func.date_trunc("hour", func.timezone("UTC", AuditEvent.created_at))
+        # Inline constants (not bind params) so that the SELECT and GROUP BY
+        # expressions are textually identical and Postgres can match them.
+        return func.date_trunc(
+            literal_column("'hour'"),
+            func.timezone(literal_column("'UTC'"), AuditEvent.created_at),
+            type_=DateTime(),
+        )
     # SQLite (tests) stores the UTC wall-clock digits as text.
     return func.strftime("%Y-%m-%d %H:00:00", AuditEvent.created_at)
 
@@ -170,18 +188,28 @@ def _as_utc_hour(value: datetime | str) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _timeseries_query(dialect_name: str, window: TimeWindow) -> Select[Any]:
+    """Hourly event counts per action inside the window."""
+    hour = _utc_hour(dialect_name).label("hour")
+    return (
+        select(hour, AuditEvent.action, func.count())
+        .where(*_window_clauses(window))
+        .group_by(hour, AuditEvent.action)
+    )
+
+
 @router.get("/timeseries", response_model=AuditTimeseries)
 async def get_timeseries(
     bucket: Bucket,
-    window: TimeWindow = Depends(time_window),
+    window: TimeWindow = Depends(required_time_window),
     session: AsyncSession = Depends(get_session),
 ) -> AuditTimeseries:
-    """Count audit events per action in hourly or Warsaw-daily buckets."""
-    if window.start is None or window.end is None:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="'from' and 'to' are required",
-        )
+    """Count audit events per action in hourly or Warsaw-daily buckets.
+
+    The first bucket starts at `from` floored to its bucket, so the number of
+    points can exceed the window length by one.
+    """
+    assert window.start is not None and window.end is not None  # nosec B101
     if window.end - window.start > MAX_WINDOW[bucket]:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -190,11 +218,8 @@ async def get_timeseries(
             ),
         )
 
-    hour = _utc_hour(session).label("hour")
     rows = await session.execute(
-        select(hour, AuditEvent.action, func.count())
-        .where(*_window_clauses(window))
-        .group_by(hour, AuditEvent.action)
+        _timeseries_query(session.get_bind().dialect.name, window)
     )
     hourly = ((_as_utc_hour(h), action, count) for h, action, count in rows)
     starts = bucket_starts(window.start, window.end, bucket)

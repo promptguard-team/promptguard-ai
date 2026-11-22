@@ -71,3 +71,19 @@ def test_fold_sums_hours_into_days_and_zero_fills():
         (starts[0], {**zero, "allowed": 3, "blocked_prompt": 4}),
         (starts[1], zero),
     ]
+
+
+def test_the_dst_start_day_spans_23_hours():
+    # Warsaw springs forward on 2026-03-29: that local day has only 23 hours.
+    first = datetime(2026, 3, 28, 23, 0, tzinfo=UTC)
+    end = datetime(2026, 3, 30, 22, 0, tzinfo=UTC)
+    starts = bucket_starts(first, end, Bucket.day)
+    hourly = [
+        (first + timedelta(hours=offset), AuditAction.allowed, 1)
+        for offset in range(47)
+    ]
+
+    points = fold_hours(hourly, starts, Bucket.day)
+
+    assert starts[1].astimezone(UTC) - starts[0].astimezone(UTC) == timedelta(hours=23)
+    assert [by_action["allowed"] for _, by_action in points] == [23, 24]

@@ -168,3 +168,33 @@ async def test_invalid_requests_are_rejected(client, ciso_headers, params):
     resp = await client.get("/audit/timeseries", params=params, headers=ciso_headers)
 
     assert resp.status_code == 422
+
+
+async def test_a_full_92_days_of_daily_buckets_is_allowed(client, ciso_headers):
+    body = await _series(
+        client,
+        ciso_headers,
+        **_window("2026-01-01T00:00:00Z", "2026-04-03T00:00:00Z", "day"),
+    )
+
+    assert 92 <= len(body["points"]) <= 93
+
+
+def test_the_postgres_query_groups_by_the_same_inline_expression():
+    from sqlalchemy.dialects import postgresql
+
+    from app.routers.audit import TimeWindow, _timeseries_query
+
+    window = TimeWindow(
+        start=datetime(2026, 11, 20, 10, tzinfo=UTC),
+        end=datetime(2026, 11, 20, 12, tzinfo=UTC),
+    )
+
+    sql = str(
+        _timeseries_query("postgresql", window).compile(dialect=postgresql.dialect())
+    )
+
+    expr = "date_trunc('hour', timezone('UTC', audit_events.created_at))"
+    group_by = sql.split("GROUP BY")[1]
+    assert expr in sql.split("GROUP BY")[0]
+    assert expr in group_by
