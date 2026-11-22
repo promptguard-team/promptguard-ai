@@ -1,0 +1,31 @@
+import { createApp } from 'vue';
+import { createPinia } from 'pinia';
+import { Quasar, Dark } from 'quasar';
+import '@quasar/extras/material-icons/material-icons.css';
+import 'quasar/src/css/index.sass';
+import './styles/app.sass';
+import App from './App.vue';
+import { configureClient } from './api/client';
+import { i18n } from './i18n';
+import { router } from './router';
+import { endSession } from './router/session';
+import { useAuthStore } from './stores/auth';
+import { applyStoredTheme } from './theme';
+
+const app = createApp(App);
+app.use(createPinia());
+app.use(Quasar, { plugins: { Dark }, config: { dark: true } });
+// Runs after install so the stored preference overrides the dark default above.
+applyStoredTheme();
+app.use(i18n);
+
+const auth = useAuthStore();
+configureClient({
+  getToken: () => auth.token,
+  onSessionEnd: (reason) => {
+    void endSession(auth, router, reason);
+  },
+});
+
+app.use(router);
+app.mount('#app');

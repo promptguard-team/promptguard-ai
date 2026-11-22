@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models import AuditAction, MLStatus, UserRole
+from app.timeseries import Bucket
 
 
 def _lowercase_email(value: str) -> str:
@@ -116,3 +117,17 @@ class AuditStats(BaseModel):
     flagged: int
     # Requests that went through without a Layer 2 verdict (fail-open).
     ml_unavailable: int
+
+
+class TimeseriesPoint(BaseModel):
+    """Event counts per action for the bucket starting at `start`."""
+
+    start: datetime
+    by_action: dict[str, int]
+
+
+class AuditTimeseries(BaseModel):
+    """Audit event counts per bucket; buckets without events are zero-filled."""
+
+    bucket: Bucket
+    points: list[TimeseriesPoint]

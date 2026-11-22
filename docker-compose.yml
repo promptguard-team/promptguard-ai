@@ -46,6 +46,8 @@ services:
       dockerfile: Dockerfile
       target: dev
     container_name: promptguard_ciso
+    environment:
+      HMR_CLIENT_PORT: '8080'
     volumes:
       - ./frontend-ciso:/app
       - /app/node_modules
