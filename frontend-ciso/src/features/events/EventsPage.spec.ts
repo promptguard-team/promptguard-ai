@@ -95,4 +95,12 @@ describe('EventsPage', () => {
     expect(listEvents).toHaveBeenCalledTimes(2);
     expect(wrapper.find('[role="alert"]').exists()).toBe(false);
   });
+
+  it('shows no empty-table message under an error', async () => {
+    vi.mocked(listEvents).mockRejectedValue(new ApiError('network'));
+    const { wrapper } = await mountAt('/events');
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('Brak zdarzeń dla wybranych filtrów.');
+  });
 });

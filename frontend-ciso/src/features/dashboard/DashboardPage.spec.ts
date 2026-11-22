@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import { h } from 'vue';
 import { QLayout, QPageContainer } from 'quasar';
@@ -52,6 +52,10 @@ async function mountAt(path: string) {
 }
 
 describe('DashboardPage', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.mocked(getStats).mockReset().mockResolvedValue(stats);
     vi.mocked(getTimeseries).mockReset().mockResolvedValue({ bucket: 'hour', points: [] });
@@ -71,20 +75,27 @@ describe('DashboardPage', () => {
   });
 
   it('writes a new range to the URL and reloads', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-20T10:00:00Z'));
     const { wrapper, router } = await mountAt('/');
 
     wrapper.findComponent(RangeSelect).vm.$emit('update:modelValue', '30d');
     await flushPromises();
 
     expect(router.currentRoute.value.query.range).toBe('30d');
-    expect(vi.mocked(getTimeseries).mock.lastCall?.[1]).toBe('day');
+    expect(getStats).toHaveBeenCalledTimes(2);
+    expect(getTimeseries).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(getStats).mock.lastCall?.[0].from.toISOString()).toBe(
+      '2026-10-21T22:00:00.000Z',
+    );
   });
 
   it('shows a retryable error for a failed card only', async () => {
     vi.mocked(getStats).mockRejectedValueOnce(new ApiError('http', 500));
     const { wrapper } = await mountAt('/');
 
-    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1);
+    // The stats banner and the donut card's banner; the trend card is unaffected.
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(2);
     expect(wrapper.find('[data-test="bar-chart"]').exists()).toBe(true);
 
     await wrapper.get('[data-test="retry"]').trigger('click');
@@ -112,6 +123,20 @@ describe('DashboardPage', () => {
     expect(getStats).toHaveBeenCalledTimes(2);
     expect(getTimeseries).toHaveBeenCalledTimes(2);
     expect(listEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it('hides stale numbers and shows a donut error when stats fail', async () => {
+    const { wrapper } = await mountAt('/');
+    vi.mocked(getStats).mockRejectedValueOnce(new ApiError('http', 500));
+
+    await wrapper.get('[data-test="refresh"]').trigger('click');
+    await flushPromises();
+
+    const values = wrapper.findAll('[data-test="kpi-value"]').map((w) => w.text());
+    expect(values).toEqual(['—', '—', '—', '—']);
+    // One banner above the KPIs and one inside the donut card.
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(2);
+    expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(false);
   });
 
   it('shows an empty share when there were no requests', async () => {

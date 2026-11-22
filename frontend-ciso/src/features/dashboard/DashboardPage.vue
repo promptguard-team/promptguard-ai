@@ -25,15 +25,20 @@ const preset = computed<RangePreset>({
     return isRangePreset(raw) ? raw : DEFAULT_PRESET;
   },
   set: (value) => {
+    // Range changes replace the history entry (Back skips them), unlike event filters.
     void router.replace({ query: { ...route.query, range: value } });
   },
 });
 
 const { stats, trend, recent, refresh } = useDashboard(preset);
 
-const total = computed(() => stats.data?.total ?? null);
+// A failed refresh keeps the previous data; hide it so stale numbers are not shown as current.
+const statsData = computed(() => (stats.error ? null : stats.data));
+const total = computed(() => statsData.value?.total ?? null);
 const blocked = computed(() =>
-  stats.data ? stats.data.by_action.blocked_prompt + stats.data.by_action.blocked_response : null,
+  statsData.value
+    ? statsData.value.by_action.blocked_prompt + statsData.value.by_action.blocked_response
+    : null,
 );
 
 function shareText(part: number | null): string | undefined {
@@ -94,7 +99,7 @@ const seeAllLink = computed(() => ({
       <div class="col-12 col-sm-6 col-lg-3">
         <KpiTile
           :label="t('dashboard.kpi.flagged')"
-          :value="stats.data?.flagged ?? null"
+          :value="statsData?.flagged ?? null"
           icon="flag"
           color="warning"
           :loading="stats.loading"
@@ -103,8 +108,8 @@ const seeAllLink = computed(() => ({
       <div class="col-12 col-sm-6 col-lg-3">
         <KpiTile
           :label="t('dashboard.kpi.mlUnavailable')"
-          :value="stats.data?.ml_unavailable ?? null"
-          :share="shareText(stats.data?.ml_unavailable ?? null)"
+          :value="statsData?.ml_unavailable ?? null"
+          :share="shareText(statsData?.ml_unavailable ?? null)"
           icon="cloud_off"
           color="grey-7"
           :loading="stats.loading"
@@ -127,8 +132,9 @@ const seeAllLink = computed(() => ({
         <q-card flat bordered>
           <q-card-section class="text-subtitle1">{{ t('dashboard.distribution') }}</q-card-section>
           <q-card-section>
-            <q-skeleton v-if="!stats.data && !stats.error" height="280px" />
+            <ErrorBanner v-if="stats.error" @retry="stats.run" />
             <ActionDonut v-else-if="stats.data" :counts="stats.data.by_action" />
+            <q-skeleton v-else height="280px" />
           </q-card-section>
         </q-card>
       </div>

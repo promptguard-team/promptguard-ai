@@ -45,6 +45,7 @@ export const pl = {
   common: {
     loadError: 'Nie udało się pobrać danych.',
     retry: 'Ponów',
+    range: 'Okres',
   },
   dashboard: {
     refresh: 'Odśwież',
@@ -87,6 +88,7 @@ export const pl = {
       clearUser: 'Usuń filtr użytkownika',
     },
     empty: 'Brak zdarzeń dla wybranych filtrów.',
+    loading: 'Wczytywanie…',
     rowsPerPage: 'Wierszy na stronę:',
     pagination: '{first}–{last} z {total}',
     flagged: 'Oflagowane',

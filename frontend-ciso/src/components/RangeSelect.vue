@@ -13,6 +13,7 @@ const options = computed(() =>
 <template>
   <q-btn-toggle
     v-model="model"
+    :aria-label="t('common.range')"
     :options="options"
     no-caps
     unelevated

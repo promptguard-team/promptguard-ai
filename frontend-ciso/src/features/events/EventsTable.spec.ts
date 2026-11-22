@@ -27,9 +27,9 @@ const page: AuditEventPage = {
   offset: 0,
 };
 
-function mountTable(data: AuditEventPage | null = page) {
+function mountTable(data: AuditEventPage | null = page, error = false) {
   return mount(EventsTable, {
-    props: { page: data, loading: false, filters: defaultEventFilters() },
+    props: { page: data, loading: false, error, filters: defaultEventFilters() },
     global: { plugins: appPlugins() },
   });
 }
@@ -44,7 +44,9 @@ describe('EventsTable', () => {
     expect(row.text()).toContain('0.97');
     expect(row.text()).toContain('injection');
     expect(row.text()).toContain('—');
-    expect(row.find('[data-test="flagged-icon"]').exists()).toBe(true);
+    const flag = row.get('[data-test="flagged-icon"]');
+    expect(flag.attributes('role')).toBe('img');
+    expect(flag.attributes('aria-label')).toBe('Oflagowane');
   });
 
   it('filters by a user when the email is clicked', async () => {
@@ -61,11 +63,20 @@ describe('EventsTable', () => {
     );
   });
 
+  it('hides the empty message under an error', () => {
+    expect(mountTable(null, true).text()).not.toContain('Brak zdarzeń dla wybranych filtrów.');
+  });
+
   describe('server-side pagination', () => {
     const big: AuditEventPage = { ...page, total: 120, limit: 25, offset: 25 };
     const mountPaged = (pageNo: number) =>
       mount(EventsTable, {
-        props: { page: big, loading: false, filters: { ...defaultEventFilters(), page: pageNo } },
+        props: {
+          page: big,
+          loading: false,
+          error: false,
+          filters: { ...defaultEventFilters(), page: pageNo },
+        },
         global: { plugins: appPlugins() },
       });
 

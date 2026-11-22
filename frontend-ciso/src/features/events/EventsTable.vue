@@ -11,6 +11,7 @@ import { PAGE_SIZES, type EventFilters, type PageSize } from './eventQuery';
 const props = defineProps<{
   page: AuditEventPage | null;
   loading: boolean;
+  error: boolean;
   filters: EventFilters;
 }>();
 const emit = defineEmits<{
@@ -95,6 +96,8 @@ function paginationLabel(first: number, last: number, total: number): string {
     :rows-per-page-options="[...PAGE_SIZES]"
     :rows-per-page-label="t('events.rowsPerPage')"
     :pagination-label="paginationLabel"
+    :loading-label="t('events.loading')"
+    :hide-no-data="error"
     :no-data-label="t('events.empty')"
     @request="onRequest"
     @update:pagination="noopPaginationUpdate"
@@ -120,14 +123,14 @@ function paginationLabel(first: number, last: number, total: number): string {
     </template>
     <template #body-cell-flagged="cell">
       <q-td :props="cell">
-        <q-icon
+        <span
           v-if="cell.row.flagged"
-          name="flag"
-          color="warning"
-          size="sm"
+          role="img"
           data-test="flagged-icon"
           :aria-label="t('events.flagged')"
-        />
+        >
+          <q-icon name="flag" color="warning" size="sm" />
+        </span>
         <span v-else>{{ EMPTY_VALUE }}</span>
       </q-td>
     </template>

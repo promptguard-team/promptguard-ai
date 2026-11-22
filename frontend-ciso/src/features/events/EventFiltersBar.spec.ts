@@ -81,4 +81,44 @@ describe('EventFiltersBar', () => {
 
     expect(wrapper.emitted('change')).toEqual([[{ userId: null, userEmail: null }]]);
   });
+
+  it('keeps an invalid draft when an unrelated filter changes', async () => {
+    const wrapper = mountBar({ range: 'custom', fromDay: '2026-11-14', toDay: '2026-11-20' });
+    const [from] = wrapper.findAllComponents(QInput);
+    from!.vm.$emit('update:modelValue', '2026-11-25');
+    await wrapper.vm.$nextTick();
+
+    await wrapper.setProps({
+      filters: {
+        ...defaultEventFilters(),
+        range: 'custom',
+        fromDay: '2026-11-14',
+        toDay: '2026-11-20',
+        flagged: true,
+      },
+    });
+
+    expect(wrapper.text()).toContain('Nieprawidłowy zakres dat.');
+    expect(wrapper.findAllComponents(QInput)[0]!.props('modelValue')).toBe('2026-11-25');
+  });
+
+  it('shows no range error while a draft is empty', async () => {
+    const wrapper = mountBar({ range: 'custom', fromDay: '2026-11-14', toDay: '2026-11-20' });
+    const [from] = wrapper.findAllComponents(QInput);
+
+    from!.vm.$emit('update:modelValue', '');
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.text()).not.toContain('Nieprawidłowy zakres dat.');
+  });
+
+  it('shows the range error under both date inputs', async () => {
+    const wrapper = mountBar({ range: 'custom', fromDay: '2026-11-14', toDay: '2026-11-20' });
+    wrapper.findAllComponents(QInput)[0]!.vm.$emit('update:modelValue', '2026-11-25');
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findAllComponents(QInput)[1]!.props('errorMessage')).toBe(
+      'Nieprawidłowy zakres dat.',
+    );
+  });
 });

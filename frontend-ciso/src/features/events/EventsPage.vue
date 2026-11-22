@@ -41,8 +41,9 @@ function onFilterUser(userId: string, userEmail: string): void {
     </q-card>
     <ErrorBanner v-if="events.error" class="q-mb-md" @retry="events.run" />
     <EventsTable
-      :page="events.data"
+      :page="events.error ? null : events.data"
       :loading="events.loading"
+      :error="events.error !== null"
       :filters="filters"
       @paginate="onPaginate"
       @filter-user="onFilterUser"

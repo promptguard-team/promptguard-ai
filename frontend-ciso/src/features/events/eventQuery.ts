@@ -90,6 +90,8 @@ export function parseEventQuery(query: Readonly<Record<string, unknown>>): Event
   const userId = single(query.user);
   if (userId && UUID_PATTERN.test(userId)) {
     filters.userId = userId;
+    // A display label taken from the URL, not verified against userId (there is no lookup
+    // endpoint); it is only ever rendered escaped.
     filters.userEmail = single(query.email);
   }
 

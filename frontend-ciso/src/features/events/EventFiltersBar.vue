@@ -36,14 +36,15 @@ const flaggedChoice = computed<FlaggedChoice>(() =>
 // Date inputs edit drafts; only a valid range reaches the URL.
 const fromDraft = ref(props.filters.fromDay ?? '');
 const toDraft = ref(props.filters.toDay ?? '');
-watch(
-  () => [props.filters.fromDay, props.filters.toDay] as const,
-  ([fromDay, toDay]) => {
-    fromDraft.value = fromDay ?? '';
-    toDraft.value = toDay ?? '';
-  },
-);
+watch([() => props.filters.fromDay, () => props.filters.toDay], ([fromDay, toDay]) => {
+  fromDraft.value = fromDay ?? '';
+  toDraft.value = toDay ?? '';
+});
 const draftInvalid = computed(() => dayRange(fromDraft.value, toDraft.value) === null);
+// Half-typed ranges are not an error yet; only a complete, invalid pair is shown as one.
+const showDraftError = computed(
+  () => draftInvalid.value && fromDraft.value !== '' && toDraft.value !== '',
+);
 
 function setRange(value: EventRange): void {
   if (value === 'custom') {
@@ -88,6 +89,7 @@ function setMlStatus(value: MlChoice): void {
     <div class="col-12">
       <q-btn-toggle
         :model-value="filters.range"
+        :aria-label="t('common.range')"
         :options="rangeOptions"
         no-caps
         unelevated
@@ -104,7 +106,7 @@ function setMlStatus(value: MlChoice): void {
           outlined
           :label="t('events.filters.from')"
           :model-value="fromDraft"
-          :error="draftInvalid"
+          :error="showDraftError"
           :error-message="t('events.filters.invalidRange')"
           @update:model-value="(v) => setDraft('from', v)"
         />
@@ -116,7 +118,8 @@ function setMlStatus(value: MlChoice): void {
           outlined
           :label="t('events.filters.to')"
           :model-value="toDraft"
-          :error="draftInvalid"
+          :error="showDraftError"
+          :error-message="t('events.filters.invalidRange')"
           @update:model-value="(v) => setDraft('to', v)"
         />
       </div>
