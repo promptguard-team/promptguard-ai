@@ -1,11 +1,54 @@
 {
   "name": "frontend-ciso",
   "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^22.22.2 || >=24.15"
+  },
   "scripts": {
-    "dev": "echo 'Mock Dev Server'",
-    "build": "mkdir -p dist && echo '<html>Mock Chat</html>' > dist/index.html",
-    "lint": "echo 'Mock Lint Passed'",
-    "format": "echo 'Mock Format Passed'",
-    "test": "echo 'Mock Test Passed'"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && vue-tsc --noEmit -p tsconfig.node.json",
+    "lint": "eslint . && npm run typecheck",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@quasar/extras": "2.1.0",
+    "@vue/devtools-api": "8.2.1",
+    "chart.js": "4.6.1",
+    "pinia": "4.1.0",
+    "quasar": "2.35.5",
+    "vue": "3.5.45",
+    "vue-chartjs": "5.3.4",
+    "vue-i18n": "11.4.23",
+    "vue-router": "5.5.1"
+  },
+  "devDependencies": {
+    "@quasar/vite-plugin": "2.0.2",
+    "@types/node": "22.20.5",
+    "@vitejs/plugin-vue": "6.0.11",
+    "@vue/eslint-config-prettier": "10.2.0",
+    "@vue/eslint-config-typescript": "14.9.0",
+    "@vue/test-utils": "2.6.0",
+    "eslint": "10.15.0",
+    "eslint-plugin-vue": "10.12.1",
+    "jsdom": "31.0.1",
+    "prettier": "3.10.1",
+    "sass-embedded": "1.108.2",
+    "typescript": "5.9.3",
+    "vite": "8.3.8",
+    "vitest": "5.1.1",
+    "vue-tsc": "3.3.14"
+  },
+  "overrides": {
+    "minimatch": "11.0.9",
+    "js-beautify": {
+      "glob": "14.0.6"
+    }
   }
 }
