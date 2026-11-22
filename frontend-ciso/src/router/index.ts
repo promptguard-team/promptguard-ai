@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/auth';
 import LoginPage from '@/features/auth/LoginPage.vue';
 import AdminLayout from '@/features/layout/AdminLayout.vue';
 import DashboardPage from '@/features/dashboard/DashboardPage.vue';
+import EventsPage from '@/features/events/EventsPage.vue';
 import { authGuard } from './guard';
 
 export const routes: RouteRecordRaw[] = [
@@ -19,6 +20,7 @@ export const routes: RouteRecordRaw[] = [
         component: DashboardPage,
         meta: { titleKey: 'nav.dashboard' },
       },
+      { path: 'events', name: 'events', component: EventsPage, meta: { titleKey: 'nav.events' } },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },
