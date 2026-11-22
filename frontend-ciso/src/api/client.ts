@@ -117,7 +117,11 @@ export async function request<T>(
   }
 
   const detail = await readDetail(response);
-  const notify = options.notifySession !== false;
+  if (options.signal?.aborted && response.status !== 401 && response.status !== 403) {
+    throw new ApiError('aborted');
+  }
+  // A late response for an older token must not end a newer session.
+  const notify = options.notifySession !== false && token !== null && config.getToken() === token;
   switch (response.status) {
     case 401:
       if (notify) {
@@ -125,6 +129,8 @@ export async function request<T>(
       }
       throw new ApiError('unauthorized', 401, detail);
     case 403:
+      // Any 403 ends the session by default: every 403 the gateway returns to this app means
+      // the ciso role is gone. Pass notifySession: false where 403 means something else.
       if (notify) {
         config.onSessionEnd('forbidden');
       }

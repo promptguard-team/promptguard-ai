@@ -104,4 +104,69 @@ describe('api/client', () => {
     expect(isAborted(error)).toBe(true);
     expect(fetchMock.mock.calls[0]![1]?.signal).toBe(controller.signal);
   });
+
+  it('does not end a newer session on a late 401 for an older token', async () => {
+    let token = 'A';
+    configureClient({ getToken: () => token, onSessionEnd });
+    fetchMock.mockImplementation(() => {
+      token = 'B';
+      return Promise.resolve(jsonResponse(401, { detail: 'expired' }));
+    });
+
+    const error = await request('GET', '/audit/stats').catch((e: unknown) => e);
+
+    expect((error as ApiError).kind).toBe('unauthorized');
+    expect(onSessionEnd).not.toHaveBeenCalled();
+  });
+
+  it('maps an abort while reading a non-OK body to "aborted"', async () => {
+    const controller = new AbortController();
+    const response = jsonResponse(500, {});
+    vi.spyOn(response, 'json').mockImplementation(() => {
+      controller.abort();
+      return Promise.reject(new DOMException('aborted', 'AbortError'));
+    });
+    fetchMock.mockResolvedValue(response);
+
+    const error = await request('GET', '/x', { signal: controller.signal }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(isAborted(error)).toBe(true);
+  });
+
+  it('maps an abort while reading an OK body to "aborted"', async () => {
+    const controller = new AbortController();
+    const response = jsonResponse(200, {});
+    vi.spyOn(response, 'json').mockImplementation(() => {
+      controller.abort();
+      return Promise.reject(new DOMException('aborted', 'AbortError'));
+    });
+    fetchMock.mockResolvedValue(response);
+
+    const error = await request('GET', '/x', { signal: controller.signal }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(isAborted(error)).toBe(true);
+  });
+
+  it('sends no Content-Type without a body and no Authorization without a token', async () => {
+    configureClient({ getToken: () => null, onSessionEnd });
+    fetchMock.mockResolvedValue(jsonResponse(200, {}));
+
+    await request('GET', '/x');
+
+    const headers = fetchMock.mock.calls[0]![1]?.headers as Record<string, string>;
+    expect(headers['Content-Type']).toBeUndefined();
+    expect(headers.Authorization).toBeUndefined();
+  });
+
+  it('does not end the session on a 403 when notifySession is false', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(403, { detail: 'nope' }));
+
+    await request('GET', '/x', { notifySession: false }).catch(() => undefined);
+
+    expect(onSessionEnd).not.toHaveBeenCalled();
+  });
 });
