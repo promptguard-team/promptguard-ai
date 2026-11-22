@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { effectScope } from 'vue';
 import { ApiError } from '@/api/client';
 import { useRequest } from './useRequest';
@@ -64,10 +64,38 @@ describe('useRequest', () => {
     const aborted = state.run();
     expect(state.error).toBeNull();
     calls[1]!.reject(new ApiError('aborted'));
-    state.cancel();
     await aborted;
     expect(state.error).toBeNull();
     expect(state.loading).toBe(false);
+  });
+
+  it('ignores a late rejection from a superseded run', async () => {
+    const { calls, load } = controllable<string>();
+    const state = inScope(() => useRequest(load));
+
+    const a = state.run();
+    const b = state.run();
+    calls[0]!.reject(new ApiError('http', 500));
+    calls[1]!.resolve('b');
+    await Promise.all([a, b]);
+
+    expect(state.error).toBeNull();
+    expect(state.data).toBe('b');
+  });
+
+  it('logs non-ApiError failures before wrapping them', async () => {
+    const { calls, load } = controllable<string>();
+    const state = inScope(() => useRequest(load));
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const boom = new TypeError('boom');
+
+    const done = state.run();
+    calls[0]!.reject(boom);
+    await done;
+
+    expect(spy).toHaveBeenCalledWith('request failed', boom);
+    expect(state.error?.kind).toBe('http');
+    spy.mockRestore();
   });
 
   it('aborts when its scope is disposed', () => {

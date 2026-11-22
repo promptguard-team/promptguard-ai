@@ -35,6 +35,9 @@ function messageFor(e: unknown): string {
   if (e instanceof ApiError && e.kind === 'unauthorized') {
     return t('login.invalidCredentials');
   }
+  if (e instanceof ApiError && e.kind === 'http') {
+    return t('login.serverError');
+  }
   return t('login.genericError');
 }
 
@@ -65,7 +68,7 @@ async function submit(): Promise<void> {
             <div class="text-subtitle2 text-grey-6">{{ t('login.title') }}</div>
           </q-card-section>
 
-          <q-card-section v-if="reasonMessage" class="q-pt-none">
+          <q-card-section v-if="reasonMessage && !error" class="q-pt-none">
             <q-banner
               dense
               rounded
@@ -95,7 +98,14 @@ async function submit(): Promise<void> {
                 :label="t('login.password')"
                 :rules="[(v: string) => !!v || t('login.required')]"
               />
-              <div v-if="error" role="alert" class="text-negative text-body2">{{ error }}</div>
+              <div
+                v-if="error"
+                role="alert"
+                data-test="login-error"
+                class="text-negative text-body2"
+              >
+                {{ error }}
+              </div>
               <q-btn
                 type="submit"
                 color="primary"

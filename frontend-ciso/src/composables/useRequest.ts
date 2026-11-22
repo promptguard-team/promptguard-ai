@@ -34,6 +34,10 @@ export function useRequest<T>(load: (signal: AbortSignal) => Promise<T>): Reques
       if (controller !== current || isAborted(e)) {
         return;
       }
+      if (!(e instanceof ApiError)) {
+        // Surface programming errors; the UI only shows the wrapped message.
+        console.error('request failed', e);
+      }
       error.value = e instanceof ApiError ? e : new ApiError('http', undefined, String(e));
     } finally {
       if (controller === current) {

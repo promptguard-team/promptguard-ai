@@ -1,4 +1,5 @@
-import { beforeEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
+import { enableAutoUnmount } from '@vue/test-utils';
 
 // Quasar reads matchMedia during install; jsdom does not implement it.
 if (typeof window.matchMedia !== 'function') {
@@ -27,3 +28,5 @@ if (typeof globalThis.ResizeObserver !== 'function') {
 beforeEach(() => {
   localStorage.clear();
 });
+
+enableAutoUnmount(afterEach);

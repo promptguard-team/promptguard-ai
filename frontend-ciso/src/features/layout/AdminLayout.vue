@@ -39,6 +39,7 @@ async function logout(): Promise<void> {
           icon="menu"
           class="lt-md"
           :aria-label="t('layout.toggleDrawer')"
+          :aria-expanded="drawerOpen"
           @click="drawerOpen = !drawerOpen"
         />
         <q-toolbar-title class="text-weight-medium" data-test="title">{{ title }}</q-toolbar-title>
@@ -74,21 +75,23 @@ async function logout(): Promise<void> {
       <div class="q-px-lg q-py-lg text-h6 text-white">
         PromptGuard <span class="text-primary">CISO</span>
       </div>
-      <q-list>
-        <q-item
-          v-for="item in navItems"
-          :key="item.to"
-          :to="item.to"
-          :exact="item.exact"
-          clickable
-          active-class="admin-drawer__item--active"
-        >
-          <q-item-section avatar>
-            <q-icon :name="item.icon" />
-          </q-item-section>
-          <q-item-section>{{ t(item.labelKey) }}</q-item-section>
-        </q-item>
-      </q-list>
+      <nav :aria-label="t('layout.navigation')">
+        <q-list>
+          <q-item
+            v-for="item in navItems"
+            :key="item.to"
+            :to="item.to"
+            :exact="item.exact"
+            clickable
+            active-class="admin-drawer__item--active"
+          >
+            <q-item-section avatar>
+              <q-icon :name="item.icon" />
+            </q-item-section>
+            <q-item-section>{{ t(item.labelKey) }}</q-item-section>
+          </q-item>
+        </q-list>
+      </nav>
     </q-drawer>
 
     <q-page-container>

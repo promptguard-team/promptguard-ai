@@ -12,12 +12,14 @@ export const pl = {
     invalidCredentials: 'Nieprawidłowy e-mail lub hasło.',
     sessionExpired: 'Sesja wygasła. Zaloguj się ponownie.',
     forbidden: 'To konto nie ma uprawnień do panelu CISO.',
+    serverError: 'Serwer zwrócił błąd. Spróbuj ponownie później.',
     genericError: 'Nie udało się połączyć z serwerem.',
   },
   layout: {
     logout: 'Wyloguj',
     toggleTheme: 'Przełącz motyw',
     toggleDrawer: 'Pokaż lub ukryj menu',
+    navigation: 'Nawigacja',
   },
   nav: {
     dashboard: 'Pulpit',

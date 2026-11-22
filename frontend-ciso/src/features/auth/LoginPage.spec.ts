@@ -55,6 +55,7 @@ describe('LoginPage', () => {
   it.each([
     [new ApiError('unauthorized', 401), 'Nieprawidłowy e-mail lub hasło.'],
     [new NotCisoError(), 'To konto nie ma uprawnień do panelu CISO.'],
+    [new ApiError('http', 500), 'Serwer zwrócił błąd. Spróbuj ponownie później.'],
     [new ApiError('network'), 'Nie udało się połączyć z serwerem.'],
   ])('shows an error for %s', async (error, message) => {
     const { wrapper, router, auth } = await mountAt('/login');
@@ -62,7 +63,7 @@ describe('LoginPage', () => {
 
     await submit(wrapper);
 
-    expect(wrapper.get('[role="alert"]').text()).toBe(message);
+    expect(wrapper.get('[data-test="login-error"]').text()).toBe(message);
     expect(router.currentRoute.value.path).toBe('/login');
   });
 
@@ -72,5 +73,15 @@ describe('LoginPage', () => {
   ])('explains why the session ended (%s)', async (reason, message) => {
     const { wrapper } = await mountAt(`/login?reason=${reason}`);
     expect(wrapper.get('[data-test="reason"]').text()).toBe(message);
+  });
+
+  it('hides the reason banner once an inline error shows', async () => {
+    const { wrapper, auth } = await mountAt('/login?reason=expired');
+    vi.spyOn(auth, 'login').mockRejectedValue(new ApiError('unauthorized', 401));
+
+    await submit(wrapper);
+
+    expect(wrapper.find('[data-test="reason"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="login-error"]').exists()).toBe(true);
   });
 });
