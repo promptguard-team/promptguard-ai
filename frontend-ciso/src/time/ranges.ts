@@ -1,3 +1,4 @@
+import { EMPTY_VALUE } from '@/format';
 import type { Bucket, TimeRange } from '@/api/audit';
 
 /** The gateway buckets days in this zone; the UI formats every timestamp in it too. */
@@ -132,10 +133,15 @@ const dateTimeFormatter = new Intl.DateTimeFormat('pl-PL', {
 });
 
 export function formatDateTime(value: string): string {
-  return dateTimeFormatter.format(new Date(value));
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? EMPTY_VALUE : dateTimeFormatter.format(date);
 }
 
 export function formatBucketLabel(value: string, bucket: Bucket): string {
-  const w = wallClock(new Date(value));
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return EMPTY_VALUE;
+  }
+  const w = wallClock(date);
   return bucket === 'hour' ? `${pad(w.hour)}:00` : `${pad(w.day)}.${pad(w.month)}`;
 }

@@ -8,6 +8,7 @@ import App from './App.vue';
 import { configureClient } from './api/client';
 import { i18n } from './i18n';
 import { router } from './router';
+import { endSession } from './router/session';
 import { useAuthStore } from './stores/auth';
 import { applyStoredTheme } from './theme';
 
@@ -22,8 +23,7 @@ const auth = useAuthStore();
 configureClient({
   getToken: () => auth.token,
   onSessionEnd: (reason) => {
-    auth.clearSession();
-    void router.push({ path: '/login', query: { reason } });
+    void endSession(auth, router, reason);
   },
 });
 

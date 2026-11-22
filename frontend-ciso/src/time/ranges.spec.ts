@@ -70,6 +70,22 @@ describe('time/ranges', () => {
     expect(dayRange(from, to)).toBeNull();
   });
 
+  it('keeps the 7d window at Warsaw midnight across the October DST change', () => {
+    const now = new Date('2026-10-28T10:00:00Z');
+    expect(iso(presetRange('7d', now).from)).toBe('2026-10-21T22:00:00.000Z');
+  });
+
+  it('keeps the 7d window at Warsaw midnight across the March DST change', () => {
+    const now = new Date('2026-04-01T10:00:00Z');
+    expect(iso(presetRange('7d', now).from)).toBe('2026-03-25T23:00:00.000Z');
+  });
+
+  it('returns the empty value for an invalid date', () => {
+    expect(formatDateTime('not a date')).toBe('—');
+    expect(formatBucketLabel('not a date', 'day')).toBe('—');
+    expect(formatBucketLabel('', 'hour')).toBe('—');
+  });
+
   it('formats in Warsaw time', () => {
     expect(formatDateTime('2026-11-20T10:00:00Z')).toMatch(/^20\.11\.2026,? 11:00:00$/);
     expect(formatBucketLabel('2026-11-20T10:00:00Z', 'hour')).toBe('11:00');

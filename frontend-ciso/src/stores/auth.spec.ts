@@ -86,6 +86,73 @@ describe('auth store', () => {
     warn.mockRestore();
   });
 
+  it('retries the stored token after a network failure', async () => {
+    localStorage.setItem(TOKEN_KEY, 'tok');
+    vi.mocked(me).mockRejectedValueOnce(new ApiError('network')).mockResolvedValueOnce(ciso);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const auth = useAuthStore();
+
+    await auth.bootstrap();
+    expect(auth.user).toBeNull();
+    await auth.bootstrap();
+
+    expect(me).toHaveBeenCalledTimes(2);
+    expect(auth.user).toEqual(ciso);
+    warn.mockRestore();
+  });
+
+  it('writes the token only after the role check passes', async () => {
+    vi.mocked(apiLogin).mockResolvedValue({ access_token: 'tok', token_type: 'bearer' });
+    let seenDuringMe: string | null = 'unset';
+    vi.mocked(me).mockImplementation(async () => {
+      seenDuringMe = localStorage.getItem(TOKEN_KEY);
+      return chatter;
+    });
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const auth = useAuthStore();
+
+    await expect(auth.login('u@example.com', 'pw')).rejects.toBeInstanceOf(NotCisoError);
+
+    expect(seenDuringMe).toBeNull();
+    expect(setItem).not.toHaveBeenCalledWith(TOKEN_KEY, expect.anything());
+    setItem.mockRestore();
+  });
+
+  it('records the forbidden reason when a stored token lost the ciso role', async () => {
+    localStorage.setItem(TOKEN_KEY, 'tok');
+    vi.mocked(me).mockResolvedValue(chatter);
+    const auth = useAuthStore();
+
+    await auth.bootstrap();
+
+    expect(auth.endReason).toBe('forbidden');
+  });
+
+  it('keeps the user when bootstrap runs after login', async () => {
+    vi.mocked(apiLogin).mockResolvedValue({ access_token: 'tok', token_type: 'bearer' });
+    vi.mocked(me).mockResolvedValue(ciso);
+    const auth = useAuthStore();
+
+    await auth.login('ciso@example.com', 'pw');
+    await auth.bootstrap();
+
+    expect(auth.user).toEqual(ciso);
+    expect(me).toHaveBeenCalledOnce();
+  });
+
+  it('does not bring the user back after clearSession', async () => {
+    localStorage.setItem(TOKEN_KEY, 'tok');
+    vi.mocked(me).mockResolvedValue(ciso);
+    const auth = useAuthStore();
+    await auth.bootstrap();
+
+    auth.clearSession();
+    await auth.bootstrap();
+
+    expect(auth.user).toBeNull();
+    expect(auth.isAuthenticated).toBe(false);
+  });
+
   it('skips the network without a stored token', async () => {
     await useAuthStore().bootstrap();
     expect(me).not.toHaveBeenCalled();
