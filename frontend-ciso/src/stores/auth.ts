@@ -72,7 +72,8 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = result.access_token;
     let current: User;
     try {
-      current = await me();
+      // A 401 here is part of the login failure, not an ended session.
+      current = await me({ notifySession: false });
     } catch (error) {
       // Never keep a token we could not resolve into a user.
       clearSession();

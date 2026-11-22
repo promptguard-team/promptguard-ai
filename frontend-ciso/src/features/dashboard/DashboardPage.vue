@@ -132,7 +132,9 @@ const seeAllLink = computed(() => ({
         <q-card flat bordered>
           <q-card-section class="text-subtitle1">{{ t('dashboard.distribution') }}</q-card-section>
           <q-card-section>
-            <ErrorBanner v-if="stats.error" @retry="stats.run" />
+            <p v-if="stats.error" class="text-grey-7 q-mb-none" data-test="donut-error">
+              {{ t('common.loadError') }}
+            </p>
             <ActionDonut v-else-if="stats.data" :counts="stats.data.by_action" />
             <q-skeleton v-else height="280px" />
           </q-card-section>

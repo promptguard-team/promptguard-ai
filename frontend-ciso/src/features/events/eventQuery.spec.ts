@@ -92,7 +92,11 @@ describe('eventQuery', () => {
     );
 
     expect(params).toMatchObject({ limit: 25, offset: 50, flagged: true, actions: [] });
-    expect(params.range).toEqual({ from: new Date('2026-11-19T10:00:00Z'), to: now });
+    expect(params.range).toEqual({
+      // The 24h window starts at the hour boundary 23h before the current hour.
+      from: new Date('2026-11-19T11:00:00Z'),
+      to: now,
+    });
   });
 
   it('maps a custom range to whole Warsaw days', () => {

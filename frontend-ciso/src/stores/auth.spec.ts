@@ -16,6 +16,16 @@ describe('auth store', () => {
     vi.mocked(me).mockReset();
   });
 
+  it('does not let the post-login me() end the session', async () => {
+    vi.mocked(apiLogin).mockResolvedValue({ access_token: 'tok', token_type: 'bearer' });
+    vi.mocked(me).mockResolvedValue(ciso);
+    const auth = useAuthStore();
+
+    await auth.login('ciso@example.com', 'pw');
+
+    expect(me).toHaveBeenCalledWith({ notifySession: false });
+  });
+
   it('logs in a CISO and stores the token', async () => {
     vi.mocked(apiLogin).mockResolvedValue({ access_token: 'tok', token_type: 'bearer' });
     vi.mocked(me).mockResolvedValue(ciso);

@@ -94,8 +94,9 @@ describe('DashboardPage', () => {
     vi.mocked(getStats).mockRejectedValueOnce(new ApiError('http', 500));
     const { wrapper } = await mountAt('/');
 
-    // The stats banner and the donut card's banner; the trend card is unaffected.
-    expect(wrapper.findAll('[role="alert"]')).toHaveLength(2);
+    // One stats banner; the donut card only shows a quiet line, the trend card is unaffected.
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1);
+    expect(wrapper.find('[data-test="donut-error"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="bar-chart"]').exists()).toBe(true);
 
     await wrapper.get('[data-test="retry"]').trigger('click');
@@ -134,8 +135,9 @@ describe('DashboardPage', () => {
 
     const values = wrapper.findAll('[data-test="kpi-value"]').map((w) => w.text());
     expect(values).toEqual(['—', '—', '—', '—']);
-    // One banner above the KPIs and one inside the donut card.
-    expect(wrapper.findAll('[role="alert"]')).toHaveLength(2);
+    // One banner above the KPIs; the donut card shows a quiet line instead of a second one.
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1);
+    expect(wrapper.find('[data-test="donut-error"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(false);
   });
 

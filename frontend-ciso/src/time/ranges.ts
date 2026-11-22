@@ -82,10 +82,18 @@ export function warsawDay(date: Date): string {
   return `${w.year}-${pad(w.month)}-${pad(w.day)}`;
 }
 
+const HOUR_MS = 60 * 60 * 1000;
+
+function floorToHour(date: Date): number {
+  return Math.floor(date.getTime() / HOUR_MS) * HOUR_MS;
+}
+
 export function presetRange(preset: RangePreset, now: Date = new Date()): PresetRange {
   switch (preset) {
     case '24h':
-      return { from: new Date(now.getTime() - 24 * 60 * 60 * 1000), to: now, bucket: 'hour' };
+      // Start of the current hour minus 23h: 23 full buckets plus the current partial one,
+      // never a partial first bucket (UTC and Warsaw hours coincide).
+      return { from: new Date(floorToHour(now) - 23 * HOUR_MS), to: now, bucket: 'hour' };
     case '7d':
       return { from: startOfWarsawDay(now, 6), to: now, bucket: 'day' };
     case '30d':

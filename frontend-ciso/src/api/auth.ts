@@ -19,6 +19,6 @@ export function login(email: string, password: string): Promise<TokenResponse> {
   });
 }
 
-export function me(): Promise<User> {
-  return request<User>('GET', '/auth/me');
+export function me(options?: { notifySession?: boolean }): Promise<User> {
+  return request<User>('GET', '/auth/me', options);
 }

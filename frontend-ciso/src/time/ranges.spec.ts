@@ -34,10 +34,14 @@ describe('time/ranges', () => {
     const now = new Date('2026-11-20T10:00:00Z');
 
     expect(presetRange('24h', now)).toEqual({
-      from: new Date('2026-11-19T10:00:00Z'),
+      // Floored to the hour: 23 full hours plus the current one, no partial first bucket.
+      from: new Date('2026-11-19T11:00:00Z'),
       to: now,
       bucket: 'hour',
     });
+    expect(iso(presetRange('24h', new Date('2026-11-20T10:30:00Z')).from)).toBe(
+      '2026-11-19T11:00:00.000Z',
+    );
     // Seven Warsaw days: Nov 14 00:00 local through now.
     expect(presetRange('7d', now)).toEqual({
       from: new Date('2026-11-13T23:00:00Z'),
