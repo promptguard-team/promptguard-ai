@@ -23,20 +23,26 @@ Downloader = Callable[[str, str, str, Path], Path]
 def hf_download(repo: str, revision: str, filename: str, dest: Path) -> Path:
     """Download one file of a pinned Hugging Face revision into dest."""
     from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import HfHubHTTPError
 
-    return Path(
-        hf_hub_download(
-            repo_id=repo,
-            filename=filename,
-            revision=revision,
-            local_dir=dest,
-            token=os.environ.get("HF_TOKEN") or None,
+    try:
+        return Path(
+            hf_hub_download(
+                repo_id=repo,
+                filename=filename,
+                revision=revision,
+                local_dir=dest,
+                token=os.environ.get("HF_TOKEN") or None,
+            )
         )
-    )
+    except (HfHubHTTPError, OSError, ValueError) as exc:
+        raise ModelLoadError(
+            f"could not download {filename} from {repo}@{revision}: {exc}"
+        ) from exc
 
 
 def fetch(card: ModelCard, dest: Path, download: Downloader | None = None) -> list[str]:
-    """Make dest hold exactly the card's files; return the names downloaded."""
+    """Ensure dest holds the card's files with matching sha256; return the names downloaded."""
     download = download or hf_download
     dest.mkdir(parents=True, exist_ok=True)
     fetched = []
@@ -44,6 +50,8 @@ def fetch(card: ModelCard, dest: Path, download: Downloader | None = None) -> li
         target = dest / name
         if target.is_file() and file_sha256(target) == expected:
             continue
+        # Never let the hub hand back the copy we just rejected.
+        target.unlink(missing_ok=True)
         download(card.repo, card.revision, name, dest)
         actual = file_sha256(target) if target.is_file() else None
         if actual != expected:

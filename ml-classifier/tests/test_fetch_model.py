@@ -100,3 +100,59 @@ def test_main_fetches_with_the_injected_downloader(tmp_path, monkeypatch, capsys
     assert code == 0
     assert "test-0.1.0" in capsys.readouterr().out
     assert (dest / "config.json").is_file()
+
+
+def test_a_rejected_local_file_is_removed_before_downloading(tmp_path):
+    dest = tmp_path / "model"
+    dest.mkdir()
+    (dest / "config.json").write_bytes(CONTENT["config.json"])
+    (dest / "model.safetensors").write_bytes(b"stale")
+    seen = []
+
+    def download(repo, revision, filename, target_dir):
+        seen.append((filename, (target_dir / filename).exists()))
+        (target_dir / filename).write_bytes(CONTENT[filename])
+        return target_dir / filename
+
+    assert fetch(load_card(_card(tmp_path)), dest, download) == ["model.safetensors"]
+    assert seen == [("model.safetensors", False)]
+
+
+def test_a_downloader_that_writes_nothing_fails_naming_the_file(tmp_path):
+    def download(repo, revision, filename, target_dir):
+        return target_dir / filename
+
+    with pytest.raises(ModelLoadError, match="config.json"):
+        fetch(load_card(_card(tmp_path)), tmp_path / "model", download)
+
+
+def test_main_reports_a_download_failure_with_exit_code_1(
+    tmp_path, monkeypatch, capsys
+):
+    def download(repo, revision, filename, target_dir):
+        raise ModelLoadError(f"could not download {filename}")
+
+    monkeypatch.setattr(fetch_model, "hf_download", download)
+
+    code = fetch_model.main(
+        ["--card", str(_card(tmp_path)), "--dest", str(tmp_path / "m")]
+    )
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "could not download" in err
+    assert len(err.strip().splitlines()) == 1
+
+
+def test_hf_download_wraps_hub_errors(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    def boom(**kwargs):
+        raise OSError("offline")
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", boom)
+
+    with pytest.raises(
+        ModelLoadError, match=r"could not download config.json from org/m@abc"
+    ):
+        fetch_model.hf_download("org/m", "abc", "config.json", tmp_path)
