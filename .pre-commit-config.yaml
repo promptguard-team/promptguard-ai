@@ -13,7 +13,7 @@ repos:
     rev: v1.4.0
     hooks:
       - id: detect-secrets
-        exclude: .env.example
+        exclude: '(\.env\.example|models/.*\.card\.json)$'
 
   # 3. Python: Ultrasfast Linter & Formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
