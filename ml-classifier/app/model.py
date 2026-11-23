@@ -1,25 +1,22 @@
-import json
-import warnings
+"""The only component that knows a transformer is underneath."""
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import joblib
-import sklearn
-from sklearn.exceptions import InconsistentVersionWarning
+import torch
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers.utils import logging as hf_logging
 
+from app.card import ModelCard, ModelLoadError, load_card, verify_files
+from app.windows import split_windows
 
-MAX_MODEL_VERSION_CHARS = 64
+__all__ = ["ModelBundle", "ModelLoadError", "Prediction"]
 
-# The gateway scores a prompt with P(injection) alone. A model carrying any
-# other class would still load, but the probability mass on that class would
-# count towards neither threshold, so an attack it recognised could score low
-# and pass. The contract is binary; enforce it.
-REQUIRED_CLASSES = frozenset({"clean", "injection"})
-
-
-class ModelLoadError(RuntimeError):
-    """The model artifact is missing, unreadable, or failed validation."""
+# Tokens shared by consecutive windows, so an instruction cut at a window edge
+# is still read whole by its neighbour. Capped at a quarter of a window so tiny
+# test models still make progress.
+WINDOW_OVERLAP = 64
 
 
 @dataclass(frozen=True)
@@ -28,107 +25,117 @@ class Prediction:
 
     label: str
     score: float
+    windows: int
 
 
 class ModelBundle:
-    """The only component that knows scikit-learn is underneath."""
+    """A loaded classifier plus the card that describes it."""
 
-    def __init__(self, pipeline: Any, card: dict[str, Any]) -> None:
-        self._pipeline = pipeline
+    def __init__(self, card: ModelCard, tokenizer: Any, model: Any, max_windows: int):
+        special = (
+            tokenizer.cls_token_id,
+            tokenizer.sep_token_id,
+            tokenizer.pad_token_id,
+        )
+        if any(token is None for token in special):
+            raise ModelLoadError("tokenizer must define cls, sep and pad tokens")
         self._card = card
-        classes = [str(c) for c in pipeline.classes_]
-        if set(classes) != REQUIRED_CLASSES:
-            raise ModelLoadError(
-                f"model classes {sorted(classes)} must be exactly "
-                f"{sorted(REQUIRED_CLASSES)}"
-            )
-        declared = card.get("classes")
-        if declared is not None and set(map(str, declared)) != set(classes):
-            # A card that disagrees with its own artifact is a packaging error,
-            # and every other field is trusted on the card's word alone.
-            raise ModelLoadError(
-                f"model card declares classes {sorted(map(str, declared))} "
-                f"but the artifact has {sorted(classes)}"
-            )
-        self._classes = classes
-        self._injection_idx = classes.index("injection")
+        self._tokenizer = tokenizer
+        self._model = model
+        self._max_windows = max_windows
+        self._cls, self._sep, self._pad = special
+        # <unk> stays: the model meets it in ordinary text (unknown characters).
+        self._controls = frozenset(tokenizer.all_special_ids) - {tokenizer.unk_token_id}
+        self._content = card.max_tokens - 2  # room for <s> and </s>
+        self._overlap = min(WINDOW_OVERLAP, self._content // 4)
+        self._injection_idx = next(
+            i for i, name in card.labels.items() if name == "injection"
+        )
 
     @property
     def version(self) -> str:
-        return str(self._card["model_version"])
+        return self._card.model_version
 
     @property
     def is_stub(self) -> bool:
-        return bool(self._card.get("stub", False))
+        return self._card.stub
+
+    def _batch(self, windows: list[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
+        sequences = [[self._cls, *window, self._sep] for window in windows]
+        width = max(len(sequence) for sequence in sequences)
+        input_ids = torch.full((len(sequences), width), self._pad, dtype=torch.long)
+        attention = torch.zeros((len(sequences), width), dtype=torch.long)
+        for row, sequence in enumerate(sequences):
+            input_ids[row, : len(sequence)] = torch.tensor(sequence, dtype=torch.long)
+            attention[row, : len(sequence)] = 1
+        return input_ids, attention
+
+    def _windows(self, text: str) -> list[list[int]]:
+        # "<s>", "</s>" or "<pad>" typed by a user must never act as the model's
+        # control tokens. split_special_tokens stops the added-token matcher,
+        # but XLM-R's SentencePiece vocab also holds those strings as ordinary
+        # pieces, so any control id that still comes out is dropped.
+        # verbose=False: long prompts exceed model_max_length by design here.
+        ids = self._tokenizer.encode(
+            text, add_special_tokens=False, split_special_tokens=True, verbose=False
+        )
+        ids = [token for token in ids if token not in self._controls]
+        return split_windows(ids, self._content, self._overlap, self._max_windows)
+
+    def windows_for(self, text: str) -> int:
+        """How many windows predict() would score for text (no inference)."""
+        return len(self._windows(text))
 
     def predict(self, text: str) -> Prediction:
-        """Return the argmax label and P(injection) for one text."""
-        proba = self._pipeline.predict_proba([text])[0]
+        """Return P(injection) as the max over the text's windows."""
+        windows = self._windows(text)
+        input_ids, attention = self._batch(windows)
+        with torch.inference_mode():
+            logits = self._model(input_ids=input_ids, attention_mask=attention).logits
+        probabilities = torch.softmax(logits, dim=-1)
+        injection = probabilities[:, self._injection_idx]
+        best = int(torch.argmax(injection))
+        label = self._card.labels[int(torch.argmax(probabilities[best]))]
         return Prediction(
-            label=self._classes[int(proba.argmax())],
-            score=float(proba[self._injection_idx]),
+            label=label, score=float(injection[best]), windows=len(windows)
         )
 
     @classmethod
-    def load(cls, model_path: Path) -> "ModelBundle":
-        """Load and validate an artifact, or raise ModelLoadError."""
-        card_path = model_path.parent / f"{model_path.stem}.card.json"
-        if not card_path.is_file():
-            raise ModelLoadError(f"model card not found at {card_path}")
+    def load(cls, card_path: Path, model_dir: Path, max_windows: int) -> "ModelBundle":
+        """Load and validate a card and its weights offline, or raise ModelLoadError."""
+        card = load_card(card_path)
+        verify_files(card, model_dir)
+        hf_logging.disable_progress_bar()
         try:
-            card = json.loads(card_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            raise ModelLoadError(f"unreadable model card at {card_path}") from exc
-
-        model_version = card.get("model_version")
-        if not isinstance(model_version, str) or not model_version:
-            # Task 4 reads bundle.version on every request; a card missing
-            # this must fail at load time rather than 500 on each call.
-            raise ModelLoadError(
-                f"model card at {card_path} is missing 'model_version'"
+            # Local files only: the service never reaches the network, and the
+            # files were just verified against the card's sha256. Bandit's B615
+            # (unpinned Hub download) does not apply: nothing is downloaded here,
+            # and the card pins the revision the files were fetched from.
+            tokenizer = AutoTokenizer.from_pretrained(  # nosec B615
+                model_dir, local_files_only=True
             )
-        if len(model_version) > MAX_MODEL_VERSION_CHARS:
-            # The gateway stores this in audit_events.ml_model_version
-            # (String(64)); a longer value would pass here and then fail every
-            # /chat audit insert.
-            raise ModelLoadError(
-                f"model_version in {card_path} is {len(model_version)} "
-                f"characters; the limit is {MAX_MODEL_VERSION_CHARS}"
+            model = AutoModelForSequenceClassification.from_pretrained(  # nosec B615
+                model_dir, local_files_only=True, use_safetensors=True
             )
-
-        declared = card.get("environment", {}).get("scikit-learn")
-        if declared != sklearn.__version__:
-            raise ModelLoadError(
-                f"model card declares scikit-learn {declared!r}, "
-                f"but {sklearn.__version__!r} is installed; "
-                "scikit-learn does not support loading pickles across versions"
-            )
-
-        try:
-            # Loading a pickle executes arbitrary code from the file, so
-            # artifacts enter this repository only through a reviewed pull
-            # request. Bandit does not flag joblib.load (B301 covers
-            # pickle/dill/shelve), so there is nothing here to suppress.
-            with warnings.catch_warnings():
-                # The check above compares the card's *claim* about
-                # scikit-learn. This compares the artifact itself: unpickling a
-                # model built by another version raises
-                # InconsistentVersionWarning, which is only a warning under
-                # uvicorn and would otherwise pass a copied-and-pasted card.
-                warnings.simplefilter("error", InconsistentVersionWarning)
-                pipeline = joblib.load(model_path)
-        except InconsistentVersionWarning as exc:
-            raise ModelLoadError(
-                f"artifact at {model_path} was built with scikit-learn "
-                f"{exc.original_sklearn_version}, but {sklearn.__version__} is "
-                "installed; the model card's claim does not override the file"
-            ) from exc
         except Exception as exc:  # noqa: BLE001 - any failure here is fatal
-            raise ModelLoadError(f"could not load artifact at {model_path}") from exc
+            raise ModelLoadError(f"could not load the model from {model_dir}") from exc
 
-        if not hasattr(pipeline, "predict_proba") or not hasattr(pipeline, "classes_"):
+        if model.config.num_labels != len(card.labels):
             raise ModelLoadError(
-                "artifact must expose predict_proba() and classes_ "
-                "(deliver an sklearn Pipeline with preprocessing inside)"
+                f"model has {model.config.num_labels} classes; "
+                f"the card declares {len(card.labels)}"
             )
-        return cls(pipeline, card)
+        positions = model.config.max_position_embeddings - 2
+        if card.max_tokens > positions:
+            raise ModelLoadError(
+                f"card max_tokens {card.max_tokens} exceeds the model's {positions} positions"
+            )
+        model.eval()
+        bundle = cls(card, tokenizer, model, max_windows)
+        try:
+            # Fail at startup, not on the first request, if the weights load
+            # but cannot run; this also pays torch's one-off first-call cost.
+            bundle.predict("warm-up")
+        except Exception as exc:  # noqa: BLE001 - any failure here is fatal
+            raise ModelLoadError(f"model failed a warm-up inference: {exc}") from exc
+        return bundle

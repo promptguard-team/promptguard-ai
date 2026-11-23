@@ -1,0 +1,20 @@
+{
+  "model_version": "xlmr-pi-e8a758a",
+  "stub": false,
+  "source": {
+    "repo": "mkvpczyk/prompt-injection-xlm-roberta",
+    "revision": "e8a758afa9bfcdead557d04c8d1bf75b8b701341"
+  },
+  "files": {
+    "config.json": "b7423862779ebba8de46730da6999a34d65adef71ed0c0d1147f4b0b055ea554",
+    "model.safetensors": "84d7911046593f4708510b302721f44d07b49387396d69368bd533022d5cb715",
+    "tokenizer.json": "1d237c4974cfea16dffbc5035028fea5b47ad8b653af90c908b7a35bdc8b0d90",
+    "tokenizer_config.json": "66b6f4a07c8d37ceaab4baf57452f1f9b6b2214996aaa832013e4fa54ad1dbbc"
+  },
+  "labels": { "0": "clean", "1": "injection" },
+  "max_tokens": 256,
+  "trained_at": "2026-08-22",
+  "base_model": "xlm-roberta-base",
+  "dataset": "S-Labs/prompt-injection-dataset (train) + 24 short PL/EN samples repeated x25; see PR #62",
+  "training_environment": { "transformers": "5.15.0" }
+}

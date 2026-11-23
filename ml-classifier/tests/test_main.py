@@ -1,7 +1,9 @@
+import anyio
 import pytest
 
-from app.main import lifespan
+from app.main import create_app, lifespan
 from app.model import ModelLoadError
+from tests.tiny_model import VERSION
 
 
 async def test_classify_returns_label_score_and_version(client):
@@ -10,7 +12,7 @@ async def test_classify_returns_label_score_and_version(client):
     body = resp.json()
     assert body["label"] in {"injection", "clean"}
     assert 0.0 <= body["score"] <= 1.0
-    assert body["model_version"] == "stub-tfidf-0.1.0"
+    assert body["model_version"] == VERSION
 
 
 async def test_classify_rejects_empty_text(client):
@@ -38,21 +40,36 @@ async def test_classify_accepts_the_gateway_ceiling(client):
 async def test_health_reports_the_model_version(client):
     resp = await client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {
-        "status": "ok",
-        "model_version": "stub-tfidf-0.1.0",
-        "stub": True,
-    }
+    assert resp.json() == {"status": "ok", "model_version": VERSION, "stub": True}
 
 
-async def test_lifespan_refuses_to_start_without_a_usable_artifact(monkeypatch):
+async def test_lifespan_refuses_to_start_without_a_card(monkeypatch, tmp_path):
     from app.config import get_settings
-    from app.main import create_app
 
     get_settings.cache_clear()
-    monkeypatch.setenv("MODEL_PATH", "models/does-not-exist.joblib")
-    application = create_app()
+    monkeypatch.setenv("MODEL_CARD_PATH", str(tmp_path / "missing.card.json"))
     with pytest.raises(ModelLoadError):
-        async with lifespan(application):
+        async with lifespan(create_app()):
             pass
     get_settings.cache_clear()
+
+
+async def test_lifespan_loads_the_model_and_applies_settings(monkeypatch, tiny_model):
+    from app import main
+    from app.config import get_settings
+
+    card_path, model_dir = tiny_model
+    threads = []
+    get_settings.cache_clear()
+    monkeypatch.setenv("MODEL_CARD_PATH", str(card_path))
+    monkeypatch.setenv("MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("CLASSIFIER_MAX_CONCURRENCY", "3")
+    monkeypatch.setenv("CLASSIFIER_TORCH_THREADS", "2")
+    monkeypatch.setattr(main.torch, "set_num_threads", threads.append)
+    application = create_app()
+    async with lifespan(application):
+        assert application.state.bundle.version == VERSION
+        assert isinstance(application.state.limiter, anyio.CapacityLimiter)
+        assert application.state.limiter.total_tokens == 3
+    get_settings.cache_clear()
+    assert threads == [2]

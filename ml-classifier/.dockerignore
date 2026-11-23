@@ -1,0 +1,6 @@
+.venv/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+# The weights stage fetches these itself; never ship a local copy.
+models/xlm-roberta-pi/
