@@ -92,6 +92,25 @@ def test_unreadable_card_is_rejected(tmp_path):
         ({"labels": {"0": "clean", "1": "attack"}}, "labels"),
         ({"labels": {"0": "clean"}}, "labels"),
         ({"labels": {"zero": "clean", "1": "injection"}}, "labels"),
+        ({"model_version": "   "}, "model_version"),
+        ({"source": {"repo": "../../x", "revision": REV}}, "repo"),
+        ({"source": {"repo": "noslash", "revision": REV}}, "repo"),
+        ({"source": "org/model"}, "source"),
+        ({"source": {"repo": "org/model", "revision": REV + "\n"}}, "revision"),
+        ({"files": {"config.json": SHA + "\n"}}, "sha256"),
+        ({"labels": ["clean", "injection"]}, "labels"),
+        ({"labels": {"00": "clean", "1": "injection"}}, "labels"),
+        ({"labels": {"0": "clean", " 1": "injection"}}, "labels"),
+        ({"labels": {"0": "clean", "1": "clean", "01": "injection"}}, "labels"),
+        ({"labels": {"0": "clean", "1": 5}}, "labels"),
+        ({"files": {"D:x": SHA}}, "file name"),
+        ({"files": {"C:": SHA}}, "file name"),
+        ({"files": {"a:b": SHA}}, "file name"),
+        ({"files": {"x\\y": SHA}}, "file name"),
+        ({"files": {" config.json": SHA}}, "file name"),
+        ({"files": {"con": SHA}}, "file name"),
+        ({"files": {"NUL.txt": SHA}}, "file name"),
+        ({"files": {".git": SHA}}, "file name"),
         ({"max_tokens": 2}, "max_tokens"),
         ({"max_tokens": True}, "max_tokens"),
         ({"max_tokens": "256"}, "max_tokens"),
@@ -129,3 +148,15 @@ def test_verify_files_names_a_mismatching_file(tmp_path):
     card = load_card(_write(tmp_path, _card()))
     with pytest.raises(ModelLoadError, match="config.json.*sha256"):
         verify_files(card, tmp_path)
+
+
+def test_card_that_is_not_an_object_is_rejected(tmp_path):
+    path = tmp_path / "card.json"
+    path.write_text("[]", encoding="utf-8")
+    with pytest.raises(ModelLoadError, match="JSON object"):
+        load_card(path)
+
+
+@pytest.mark.parametrize("name", ["model.safetensors", "tokenizer_config.json"])
+def test_ordinary_file_names_are_accepted(tmp_path, name):
+    assert load_card(_write(tmp_path, _card(files={name: SHA}))).files == {name: SHA}

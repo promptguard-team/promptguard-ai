@@ -60,3 +60,20 @@ def test_a_cap_of_one_keeps_the_first_window():
 def test_invalid_parameters_are_rejected(size, overlap, max_windows):
     with pytest.raises(ValueError):
         split_windows([1, 2, 3], size=size, overlap=overlap, max_windows=max_windows)
+
+
+def test_cap_with_overlap_keeps_head_and_tail_windows():
+    windows = split_windows(list(range(100)), size=10, overlap=2, max_windows=4)
+
+    assert [w[0] for w in windows] == [0, 8, 88, 90]
+
+
+@pytest.mark.parametrize("size", range(2, 12))
+@pytest.mark.parametrize("overlap_pct", [0, 25, 50, 90])
+@pytest.mark.parametrize("length", [1, 7, 33, 100])
+def test_consecutive_windows_share_at_least_the_overlap(size, overlap_pct, length):
+    overlap = size * overlap_pct // 100
+    windows = split_windows(list(range(length)), size, overlap, max_windows=1000)
+
+    for left, right in zip(windows, windows[1:]):
+        assert len(set(left) & set(right)) >= overlap

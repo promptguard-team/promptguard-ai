@@ -6,7 +6,7 @@ def split_windows(
 ) -> list[list[int]]:
     """Return windows of exactly `size` ids (or one shorter window for short input).
 
-    Consecutive windows share `overlap` ids, and the last window ends at the last
+    Consecutive windows share at least `overlap` ids, and the last window ends at the last
     id, so every token is read with some context. Past `max_windows`, the first
     ceil(max/2) and last floor(max/2) windows are kept: injected instructions are
     usually prepended or appended to otherwise harmless text.
@@ -23,10 +23,9 @@ def split_windows(
 
     step = size - overlap
     starts = list(range(0, len(ids) - size, step)) + [len(ids) - size]
-    windows = [list(ids[start : start + size]) for start in starts]
 
-    if len(windows) > max_windows:
+    if len(starts) > max_windows:
         head = (max_windows + 1) // 2
         tail = max_windows // 2
-        windows = windows[:head] + (windows[-tail:] if tail else [])
-    return windows
+        starts = starts[:head] + (starts[-tail:] if tail else [])
+    return [list(ids[start : start + size]) for start in starts]

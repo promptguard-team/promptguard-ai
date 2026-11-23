@@ -16,8 +16,18 @@ MAX_MODEL_VERSION_CHARS = 64
 # LABEL_0/LABEL_1, and an inverted mapping would turn every verdict around.
 REQUIRED_LABELS = frozenset({"clean", "injection"})
 
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_REVISION = re.compile(r"^[0-9a-f]{40}$")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+_REVISION = re.compile(r"[0-9a-f]{40}")
+_REPO = re.compile(r"[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*")
+# Names become paths under the model directory, so allow a conservative set:
+# no separators, no drive prefixes ("C:x"), no leading dot or space.
+_FILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# Windows resolves these (with any extension) to devices, not files.
+_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
 _CHUNK = 1 << 20
 
 
@@ -53,7 +63,7 @@ def _fail(path: Path, problem: str) -> ModelLoadError:
 
 def _version(raw: dict[str, Any], path: Path) -> str:
     value = raw.get("model_version")
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value.strip():
         raise _fail(path, "'model_version' must be a non-empty string")
     if len(value) > MAX_MODEL_VERSION_CHARS:
         raise _fail(
@@ -70,9 +80,9 @@ def _source(raw: dict[str, Any], path: Path) -> tuple[str, str]:
         raise _fail(path, "'source' must be an object with 'repo' and 'revision'")
     repo = source.get("repo")
     revision = source.get("revision")
-    if not isinstance(repo, str) or not repo:
-        raise _fail(path, "'source.repo' must be a non-empty string")
-    if not isinstance(revision, str) or not _REVISION.match(revision):
+    if not isinstance(repo, str) or not _REPO.fullmatch(repo):
+        raise _fail(path, "'source.repo' must look like 'owner/name'")
+    if not isinstance(revision, str) or not _REVISION.fullmatch(revision):
         # A branch name would let the weights change under the same card.
         raise _fail(path, "'source.revision' must be a 40-character commit hash")
     return repo, revision
@@ -83,15 +93,13 @@ def _files(raw: dict[str, Any], path: Path) -> dict[str, str]:
     if not isinstance(files, dict) or not files:
         raise _fail(path, "'files' must map file names to sha256 hashes")
     for name, digest in files.items():
-        # Names become paths under the model directory when fetching.
         if (
             not isinstance(name, str)
-            or "/" in name
-            or "\\" in name
-            or name in {"", ".", ".."}
+            or not _FILE_NAME.fullmatch(name)
+            or name.split(".", 1)[0].upper() in _RESERVED_NAMES
         ):
             raise _fail(path, f"invalid file name {name!r} in 'files'")
-        if not isinstance(digest, str) or not _SHA256.match(digest):
+        if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
             raise _fail(path, f"'files.{name}' must be a lowercase hex sha256")
     return dict(files)
 
@@ -103,11 +111,12 @@ def _labels(raw: dict[str, Any], path: Path) -> dict[int, str]:
     )
     if not isinstance(labels, dict):
         raise _fail(path, problem)
-    try:
-        parsed = {int(index): str(name) for index, name in labels.items()}
-    except ValueError:
-        raise _fail(path, problem) from None
-    if set(parsed) != {0, 1} or set(parsed.values()) != REQUIRED_LABELS:
+    if set(labels) != {"0", "1"} or not all(
+        isinstance(name, str) for name in labels.values()
+    ):
+        raise _fail(path, problem)
+    parsed = {int(index): name for index, name in labels.items()}
+    if set(parsed.values()) != REQUIRED_LABELS:
         raise _fail(path, problem)
     return parsed
 
