@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,10 +11,15 @@ class Settings(BaseSettings):
         env_file=".env", extra="ignore", protected_namespaces=()
     )
 
-    model_path: str = "models/stub-tfidf-0.1.0.joblib"
-    classifier_max_text_chars: int = 32000
     model_dir: str = "models/xlm-roberta-pi"
     model_card_path: str = "models/xlm-roberta-pi.card.json"
+    classifier_max_text_chars: int = 32000
+    # Windows scored per request; bounds latency on very long prompts.
+    classifier_max_windows: int = Field(8, ge=1)
+    # Inferences allowed at once; extra requests queue instead of sharing the CPU.
+    classifier_max_concurrency: int = Field(1, ge=1)
+    # torch intra-op threads; None keeps torch's own default.
+    classifier_torch_threads: int | None = Field(None, ge=1)
 
 
 @lru_cache

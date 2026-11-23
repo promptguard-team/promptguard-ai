@@ -2,7 +2,9 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import anyio
 import anyio.to_thread
+import torch
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 
 from app.config import Settings, get_settings
@@ -14,21 +16,36 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load and validate the artifact, or refuse to start."""
+    """Load and validate the model, or refuse to start."""
     settings = get_settings()
-    bundle = ModelBundle.load(Path(settings.model_path))
+    if settings.classifier_torch_threads is not None:
+        torch.set_num_threads(settings.classifier_torch_threads)
+    bundle = ModelBundle.load(
+        Path(settings.model_card_path),
+        Path(settings.model_dir),
+        settings.classifier_max_windows,
+    )
     if bundle.is_stub:
         logger.warning(
             "Serving STUB model %s. Its verdicts are not a security control.",
             bundle.version,
         )
+    logger.info("Serving model %s", bundle.version)
     app.state.bundle = bundle
+    # One limiter for all requests: extra inferences queue rather than split
+    # the CPU, which would make every request miss the gateway's budget.
+    app.state.limiter = anyio.CapacityLimiter(settings.classifier_max_concurrency)
     yield
 
 
 def get_bundle(request: Request) -> ModelBundle:
     """Return the model loaded in the lifespan."""
     return request.app.state.bundle
+
+
+def get_limiter(request: Request) -> anyio.CapacityLimiter:
+    """Return the inference limiter created in the lifespan."""
+    return request.app.state.limiter
 
 
 def create_app() -> FastAPI:
@@ -38,6 +55,7 @@ def create_app() -> FastAPI:
     async def classify(
         body: ClassifyRequest,
         bundle: ModelBundle = Depends(get_bundle),
+        limiter: anyio.CapacityLimiter = Depends(get_limiter),
         settings: Settings = Depends(get_settings),
     ) -> ClassifyResponse:
         """Score one text. Returns a measurement, never a verdict."""
@@ -45,7 +63,9 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, detail="text too long"
             )
-        prediction = await anyio.to_thread.run_sync(bundle.predict, body.text)
+        prediction = await anyio.to_thread.run_sync(
+            bundle.predict, body.text, limiter=limiter
+        )
         return ClassifyResponse(
             label=prediction.label,
             score=prediction.score,
@@ -54,7 +74,7 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health(bundle: ModelBundle = Depends(get_bundle)) -> dict:
-        """Readiness probe. Reports which artifact is being served."""
+        """Readiness probe. Reports which model is being served."""
         return {
             "status": "ok",
             "model_version": bundle.version,

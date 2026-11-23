@@ -1,3 +1,4 @@
+import threading
 import time
 
 import anyio
@@ -56,14 +57,43 @@ async def test_slow_inference_does_not_block_the_event_loop(app, client):
     assert health_elapsed < 0.3
 
 
-async def test_concurrent_requests_are_all_served(app, client):
-    # A status-code-only check would stay green even if /classify ran fully
-    # serially on the loop -- 20 requests would still each return 200, just
-    # one after another. Timing the whole group is what would have caught
-    # the Argon2 hashing block: each request pays a fixed cost, and the
-    # group's total wall time reveals whether that cost was paid 20 times
-    # over (serialized) or paid once, in parallel (via the worker-thread
-    # pool behind anyio.to_thread).
+async def test_requests_beyond_the_limiter_queue_instead_of_running_at_once(
+    app, client
+):
+    real_predict = app.state.bundle.predict
+    running = 0
+    peak = 0
+    lock = threading.Lock()
+
+    def slow_predict(text):
+        nonlocal running, peak
+        with lock:
+            running += 1
+            peak = max(peak, running)
+        time.sleep(0.05)
+        with lock:
+            running -= 1
+        return real_predict(text)
+
+    app.state.bundle.predict = slow_predict
+    results = []
+
+    async def one():
+        resp = await client.post("/classify", json={"text": "hello there"})
+        results.append(resp.status_code)
+
+    try:
+        async with anyio.create_task_group() as tg:
+            for _ in range(5):
+                tg.start_soon(one)
+    finally:
+        app.state.bundle.predict = real_predict
+
+    assert results == [200] * 5
+    assert peak == 1
+
+
+async def test_a_wider_limiter_serves_requests_in_parallel(app, client):
     real_predict = app.state.bundle.predict
 
     def slow_predict(text):
@@ -71,6 +101,7 @@ async def test_concurrent_requests_are_all_served(app, client):
         return real_predict(text)
 
     app.state.bundle.predict = slow_predict
+    app.state.limiter = anyio.CapacityLimiter(20)
     results = []
 
     async def one():
@@ -87,9 +118,5 @@ async def test_concurrent_requests_are_all_served(app, client):
     elapsed = time.perf_counter() - started
 
     assert results == [200] * 20
-    # 20 requests x 0.1s through anyio's worker-thread pool (default limiter
-    # of 40 tokens, so all 20 fit at once) run in parallel and land around
-    # 0.1-0.3s. Serialized on the event loop they would take ~2.0s. 1.0s
-    # gives roughly 2x margin over the parallel path while still catching a
-    # fully serialized regression.
+    # Serialized these would take ~2.0s; through 20 worker threads ~0.1-0.4s.
     assert elapsed < 1.0

@@ -1,8 +1,12 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 fastapi==0.115.6
 uvicorn==0.34.0
 pydantic==2.13.4
 pydantic-settings==2.7.0
-scikit-learn==1.7.2
-numpy==2.5.3
-joblib==1.6.0
 anyio==4.7.0
+numpy==2.5.3
+torch==2.15.0+cpu
+transformers==5.22.1
+tokenizers==0.23.3
+safetensors==0.8.0
+huggingface_hub==2.4.0

@@ -5,8 +5,9 @@ outside this repository and will change; pinning them in CI would either break
 on every new model or be loosened until it proved nothing.
 
 Run from the ml-classifier/ directory (it imports `app` and `scripts`):
-    python -m scripts.evaluate models/<artifact>.joblib data/eval.csv
-    python -m scripts.evaluate models/<artifact>.joblib data/eval.csv --adversarial
+    python -m scripts.evaluate models/xlm-roberta-pi.card.json data/eval.csv
+    python -m scripts.evaluate models/xlm-roberta-pi.card.json data/eval.csv --adversarial
+(weights from MODEL_DIR, default models/xlm-roberta-pi; fetch them first)
 
 The evaluation CSV has two columns: text,label  (label in {injection, clean}).
 
@@ -24,6 +25,7 @@ import argparse
 import csv
 from pathlib import Path
 
+from app.config import get_settings
 from app.model import ModelBundle
 from scripts.adversarial import TRANSFORMS, obfuscate
 
@@ -85,14 +87,20 @@ def _report(bundle: ModelBundle, rows: list[tuple[str, str]], title: str) -> Non
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("model", type=Path)
+    parser.add_argument("card", type=Path)
     parser.add_argument("dataset", type=Path)
+    parser.add_argument("--model-dir", type=Path, default=None)
     parser.add_argument("--adversarial", action="store_true")
     args = parser.parse_args()
 
-    bundle = ModelBundle.load(args.model)
+    settings = get_settings()
+    bundle = ModelBundle.load(
+        args.card,
+        args.model_dir or Path(settings.model_dir),
+        settings.classifier_max_windows,
+    )
     if bundle.is_stub:
-        print("WARNING: this is the stub artifact. These numbers mean nothing.")
+        print("WARNING: this is a stub model. These numbers mean nothing.")
 
     rows = _load(args.dataset)
     _report(bundle, rows, "baseline")
