@@ -16,5 +16,5 @@
   "trained_at": "2026-08-22",
   "base_model": "xlm-roberta-base",
   "dataset": "S-Labs/prompt-injection-dataset (train) + 24 short PL/EN samples repeated x25; see PR #62",
-  "environment": { "transformers": "5.15.0" }
+  "training_environment": { "transformers": "5.15.0" }
 }
