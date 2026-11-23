@@ -12,6 +12,8 @@ class Settings(BaseSettings):
 
     model_path: str = "models/stub-tfidf-0.1.0.joblib"
     classifier_max_text_chars: int = 32000
+    model_dir: str = "models/xlm-roberta-pi"
+    model_card_path: str = "models/xlm-roberta-pi.card.json"
 
 
 @lru_cache
