@@ -10,7 +10,7 @@ def test_settings_defaults():
     assert settings.model_dir == "models/xlm-roberta-pi"
     assert settings.model_card_path == "models/xlm-roberta-pi.card.json"
     assert settings.classifier_max_text_chars == 32000
-    assert settings.classifier_max_windows == 8
+    assert settings.classifier_max_windows == 3
     assert settings.classifier_max_concurrency == 1
     assert settings.classifier_torch_threads is None
 
