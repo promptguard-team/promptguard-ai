@@ -44,6 +44,8 @@ class ModelBundle:
         self._model = model
         self._max_windows = max_windows
         self._cls, self._sep, self._pad = special
+        # <unk> stays: the model meets it in ordinary text (unknown characters).
+        self._controls = frozenset(tokenizer.all_special_ids) - {tokenizer.unk_token_id}
         self._content = card.max_tokens - 2  # room for <s> and </s>
         self._overlap = min(WINDOW_OVERLAP, self._content // 4)
         self._injection_idx = next(
@@ -69,8 +71,15 @@ class ModelBundle:
         return input_ids, attention
 
     def _windows(self, text: str) -> list[list[int]]:
+        # "<s>", "</s>" or "<pad>" typed by a user must never act as the model's
+        # control tokens. split_special_tokens stops the added-token matcher,
+        # but XLM-R's SentencePiece vocab also holds those strings as ordinary
+        # pieces, so any control id that still comes out is dropped.
         # verbose=False: long prompts exceed model_max_length by design here.
-        ids = self._tokenizer.encode(text, add_special_tokens=False, verbose=False)
+        ids = self._tokenizer.encode(
+            text, add_special_tokens=False, split_special_tokens=True, verbose=False
+        )
+        ids = [token for token in ids if token not in self._controls]
         return split_windows(ids, self._content, self._overlap, self._max_windows)
 
     def windows_for(self, text: str) -> int:
@@ -122,4 +131,11 @@ class ModelBundle:
                 f"card max_tokens {card.max_tokens} exceeds the model's {positions} positions"
             )
         model.eval()
-        return cls(card, tokenizer, model, max_windows)
+        bundle = cls(card, tokenizer, model, max_windows)
+        try:
+            # Fail at startup, not on the first request, if the weights load
+            # but cannot run; this also pays torch's one-off first-call cost.
+            bundle.predict("warm-up")
+        except Exception as exc:  # noqa: BLE001 - any failure here is fatal
+            raise ModelLoadError(f"model failed a warm-up inference: {exc}") from exc
+        return bundle

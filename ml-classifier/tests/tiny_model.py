@@ -39,7 +39,10 @@ def build_tiny_model(directory: Path, *, num_labels: int = 2, seed: int = 0) -> 
     """Write tokenizer and weights to directory (one word = one token)."""
     vocab = {token: index for index, token in enumerate(SPECIALS + WORDS)}
     tokenizer = Tokenizer(models.WordLevel(vocab=vocab, unk_token="<unk>"))
-    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    # WhitespaceSplit keeps "<pad>" whole, so like the real SentencePiece vocab it
+    # can reach a control token as an ordinary piece even when special-token
+    # matching is off.
+    tokenizer.pre_tokenizer = pre_tokenizers.WhitespaceSplit()
     fast = PreTrainedTokenizerFast(
         tokenizer_object=tokenizer,
         bos_token="<s>",

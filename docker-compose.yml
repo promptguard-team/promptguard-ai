@@ -109,6 +109,10 @@ services:
     volumes:
       - ./ml-classifier:/app
       - ml_weights:/app/models/xlm-roberta-pi
+    environment:
+      # Matches the 2-CPU limit below; torch otherwise uses the host core count
+      # and oversubscribes the container.
+      CLASSIFIER_TORCH_THREADS: '2'
     healthcheck:
       test:
         - CMD

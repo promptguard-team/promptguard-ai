@@ -19,6 +19,8 @@ async def lifespan(app: FastAPI):
     """Load and validate the model, or refuse to start."""
     settings = get_settings()
     if settings.classifier_torch_threads is not None:
+        # Must run before any inference (including the load's warm-up): torch's
+        # worker threads pick up the global thread count lazily, on first use.
         torch.set_num_threads(settings.classifier_torch_threads)
     bundle = ModelBundle.load(
         Path(settings.model_card_path),
