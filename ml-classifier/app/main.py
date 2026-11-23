@@ -65,9 +65,18 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, detail="text too long"
             )
-        prediction = await anyio.to_thread.run_sync(
-            bundle.predict, body.text, limiter=limiter
-        )
+        prediction = None
+        # The deadline cancels the wait for a limiter slot promptly. A thread
+        # that already runs cannot be cancelled: that inference completes, and
+        # its result is still returned even if the deadline passed meanwhile.
+        with anyio.move_on_after(settings.classifier_queue_timeout_seconds):
+            prediction = await anyio.to_thread.run_sync(
+                bundle.predict, body.text, limiter=limiter
+            )
+        if prediction is None:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, detail="classifier busy"
+            )
         return ClassifyResponse(
             label=prediction.label,
             score=prediction.score,

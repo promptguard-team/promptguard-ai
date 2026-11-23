@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     classifier_max_windows: int = Field(3, ge=1)
     # Inferences allowed at once; extra requests queue instead of sharing the CPU.
     classifier_max_concurrency: int = Field(1, ge=1)
+    # Longest a request may wait for an inference slot. The gateway gives up
+    # after 2 s, so a request still queued past this is abandoned by its caller
+    # anyway; do not spend an inference on it.
+    classifier_queue_timeout_seconds: float = Field(1.5, gt=0)
     # torch intra-op threads; None keeps torch's own default.
     classifier_torch_threads: int | None = Field(None, ge=1)
 

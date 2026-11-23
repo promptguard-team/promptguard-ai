@@ -120,3 +120,43 @@ async def test_a_wider_limiter_serves_requests_in_parallel(app, client):
     assert results == [200] * 20
     # Serialized these would take ~2.0s; through 20 worker threads ~0.1-0.4s.
     assert elapsed < 1.0
+
+
+async def test_request_queued_past_the_timeout_gets_503(app, client, monkeypatch):
+    # The gateway abandons a request after 2 s, so a request still waiting for
+    # the limiter past the queue timeout must not cost an inference.
+    from app.config import get_settings
+
+    monkeypatch.setenv("CLASSIFIER_QUEUE_TIMEOUT_SECONDS", "0.2")
+    get_settings.cache_clear()
+    real_predict = app.state.bundle.predict
+    calls = 0
+
+    def slow_predict(text):
+        nonlocal calls
+        calls += 1
+        time.sleep(0.6)
+        return real_predict(text)
+
+    app.state.bundle.predict = slow_predict
+    results = {}
+
+    async def one(name):
+        resp = await client.post("/classify", json={"text": "hello there"})
+        results[name] = resp
+
+    try:
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(one, "first")
+            await anyio.sleep(0.05)
+            tg.start_soon(one, "second")
+    finally:
+        app.state.bundle.predict = real_predict
+        get_settings.cache_clear()
+
+    # The first call holds the single slot for 0.6 s, beyond the 0.2 s timeout.
+    # It was already running, so it completes; the queued one is abandoned.
+    assert results["first"].status_code == 200
+    assert results["second"].status_code == 503
+    assert results["second"].json()["detail"] == "classifier busy"
+    assert calls == 1

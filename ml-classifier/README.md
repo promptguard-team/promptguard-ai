@@ -65,6 +65,7 @@ model owner.
 | `CLASSIFIER_MAX_TEXT_CHARS` | `32000` | request size limit |
 | `CLASSIFIER_MAX_WINDOWS` | `3` | windows scored per request (see [Long prompts](#long-prompts)) |
 | `CLASSIFIER_MAX_CONCURRENCY` | `1` | inferences allowed at once |
+| `CLASSIFIER_QUEUE_TIMEOUT_SECONDS` | `1.5` | longest a request may wait for an inference slot before it gets `503` |
 | `CLASSIFIER_TORCH_THREADS` | torch default | torch intra-op threads; compose sets `2` to match its CPU limit, because torch otherwise uses the host core count and oversubscribes a CPU-limited container |
 | `HF_TOKEN` | optional | used by `fetch_model` only |
 
@@ -86,7 +87,9 @@ python -m scripts.fetch_model
 
 The script is idempotent and verifies the sha256 of every file against the card.
 The `prod` image fetches the weights at build time, so building needs network.
-Compose keeps them in the `ml_weights` volume.
+Compose keeps them in the `ml_weights` volume. On the first `compose up` the
+classifier downloads ~1.1 GB before serving, and until then the gateway fails
+open (`ml_unavailable`).
 
 The service itself never downloads anything. At startup it verifies the sha256
 of every file, loads offline (safetensors only, no remote code) and runs one
@@ -116,8 +119,11 @@ dropped, so typed control tokens cannot fake sequence structure. `<unk>` is
 kept.
 
 Each request is one inference at a time by default
-(`CLASSIFIER_MAX_CONCURRENCY=1`). Concurrent requests queue, and requests that
-wait past the gateway's budget fail open and are audited as `ml_unavailable`.
+(`CLASSIFIER_MAX_CONCURRENCY=1`). Concurrent requests queue, but only for
+`CLASSIFIER_QUEUE_TIMEOUT_SECONDS`: a request still queued past it gets `503`
+(`classifier busy`) instead of building an unbounded backlog. The gateway treats
+that as unavailable, so it fails open and audits `ml_unavailable`. An inference
+that has already started always completes.
 
 ## Latency
 

@@ -12,6 +12,7 @@ def test_settings_defaults():
     assert settings.classifier_max_text_chars == 32000
     assert settings.classifier_max_windows == 3
     assert settings.classifier_max_concurrency == 1
+    assert settings.classifier_queue_timeout_seconds == 1.5
     assert settings.classifier_torch_threads is None
 
 
@@ -21,6 +22,7 @@ def test_settings_read_from_environment(monkeypatch):
     monkeypatch.setenv("CLASSIFIER_MAX_TEXT_CHARS", "500")
     monkeypatch.setenv("CLASSIFIER_MAX_WINDOWS", "4")
     monkeypatch.setenv("CLASSIFIER_MAX_CONCURRENCY", "2")
+    monkeypatch.setenv("CLASSIFIER_QUEUE_TIMEOUT_SECONDS", "0.75")
     monkeypatch.setenv("CLASSIFIER_TORCH_THREADS", "3")
     settings = Settings()
     assert settings.model_dir == "/models/x"
@@ -28,6 +30,7 @@ def test_settings_read_from_environment(monkeypatch):
     assert settings.classifier_max_text_chars == 500
     assert settings.classifier_max_windows == 4
     assert settings.classifier_max_concurrency == 2
+    assert settings.classifier_queue_timeout_seconds == 0.75
     assert settings.classifier_torch_threads == 3
 
 
@@ -37,6 +40,7 @@ def test_settings_read_from_environment(monkeypatch):
         "CLASSIFIER_MAX_WINDOWS",
         "CLASSIFIER_MAX_CONCURRENCY",
         "CLASSIFIER_TORCH_THREADS",
+        "CLASSIFIER_QUEUE_TIMEOUT_SECONDS",
     ],
 )
 def test_counts_must_be_positive(monkeypatch, name):
