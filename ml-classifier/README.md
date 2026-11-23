@@ -8,8 +8,8 @@ one should not require redeploying a model.
 It scores prompts only. Replies from the LLM are not sent here; response-side
 protection is the gateway's rule engine (Layer 1).
 
-If you are here to deliver a trained model, read [Delivering a real
-model](#delivering-a-real-model) and [Evaluation](#evaluation).
+If you are here to deliver a new model version, read [Delivering a new model
+version](#delivering-a-new-model-version) and [Evaluation](#evaluation).
 
 ## API
 
@@ -20,7 +20,7 @@ model](#delivering-a-real-model) and [Evaluation](#evaluation).
 ```
 
 ```json
-{ "label": "injection", "score": 0.94, "model_version": "stub-tfidf-0.1.0" }
+{ "label": "injection", "score": 0.94, "model_version": "xlmr-pi-e8a758a" }
 ```
 
 `score` is P(injection), within `[0,1]`. `label` is the argmax class
@@ -32,94 +32,127 @@ Returns `422` for empty text or text longer than `CLASSIFIER_MAX_TEXT_CHARS`
 ### `GET /health`
 
 Reports `status`, `model_version` and `stub`. The service refuses to start
-without a loadable, valid artifact, so a running process always has a model.
+without a loadable, valid model, so a running process always has one.
+
+## The model
+
+The service serves
+[`mkvpczyk/prompt-injection-xlm-roberta`](https://huggingface.co/mkvpczyk/prompt-injection-xlm-roberta)
+pinned at commit `e8a758a`, a fine-tuned XLM-RoBERTa from the team's training
+PR #62. Labels are `0 = clean` and `1 = injection`, declared on the card
+(`models/xlm-roberta-pi.card.json`) and read from it, never assumed. The model
+reads up to 256 tokens at a time, handles Polish and English, and ships as about
+1.1 GB of weights in safetensors.
+
+### Known model behaviour
+
+Observed on the real weights with the PR #62 sample prompts plus a few more:
+attacks in Polish and English score 0.98-0.999, and benign prompts mostly score
+0.01 or less. There are exceptions: "Podsumuj proszę ten artykuł w trzech
+punktach." scores 0.95 and "Summarize this article in three bullet points."
+scores 0.41. The teammate's own transformers pipeline gives identical numbers,
+so this is the model, not the integration. With the gateway's placeholder block
+threshold of 0.90 such prompts would be blocked. Calibrate the thresholds with
+`scripts.evaluate` before relying on them, and report false positives to the
+model owner.
 
 ## Configuration
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `MODEL_PATH` | `models/stub-tfidf-0.1.0.joblib` | artifact to serve, relative to the working directory (`/app`) |
+| `MODEL_DIR` | `models/xlm-roberta-pi` | directory with the weights and tokenizer, relative to the working directory (`/app`) |
+| `MODEL_CARD_PATH` | `models/xlm-roberta-pi.card.json` | provenance card with the pinned revision and sha256 values |
 | `CLASSIFIER_MAX_TEXT_CHARS` | `32000` | request size limit |
+| `CLASSIFIER_MAX_WINDOWS` | `3` | windows scored per request (see [Long prompts](#long-prompts)) |
+| `CLASSIFIER_MAX_CONCURRENCY` | `1` | inferences allowed at once |
+| `CLASSIFIER_TORCH_THREADS` | torch default | torch intra-op threads; compose sets `2` to match its CPU limit, because torch otherwise uses the host core count and oversubscribes a CPU-limited container |
+| `HF_TOKEN` | optional | used by `fetch_model` only |
 
 The gateway-side settings (`CLASSIFIER_URL`, `CLASSIFIER_TIMEOUT_SECONDS`,
 `CLASSIFIER_BLOCK_THRESHOLD`, `CLASSIFIER_REVIEW_THRESHOLD`) live in the root
 `.env`, not here.
 
-## The shipped model is a stub
+`requirements.txt` pins `torch==2.15.0+cpu`, which comes from the PyTorch CPU
+index (Linux x86_64 and Windows). On macOS install the plain `torch==2.15.0`
+wheel instead.
 
-`models/stub-tfidf-0.1.0.joblib` is a placeholder fitted on forty hand-written
-examples. It exists so the HTTP contract and the gateway integration could be
-built and tested before a real model was delivered. **Its verdicts are not a
-security control.** The service logs a warning at startup when serving it, and
-because `model_version` is written to every audit row, the database permanently
-records which verdicts came from it.
+## Getting the weights
 
-Regenerate it (from the `ml-classifier/` directory) with:
+From the `ml-classifier/` directory:
 
 ```bash
-python -m scripts.train_stub
+python -m scripts.fetch_model
 ```
 
-Note that the script hardcodes `trained_at` in the card, so a regenerated
-artifact reports the original date.
+The script is idempotent and verifies the sha256 of every file against the card.
+The `prod` image fetches the weights at build time, so building needs network.
+Compose keeps them in the `ml_weights` volume.
 
-## Delivering a real model
+The service itself never downloads anything. At startup it verifies the sha256
+of every file, loads offline (safetensors only, no remote code) and runs one
+warm-up inference. Any failure, such as a missing file or a hash mismatch,
+refuses to start. Loading takes about 7-10 s on the dev box, hence the generous
+compose `start_period`.
 
-Add the artifact and its card to `models/`, point `MODEL_PATH` at it, and make
-`requirements.txt` match the versions the card declares. Every requirement below
-exists because its absence produces a specific failure.
+## Long prompts
 
-1. **All preprocessing inside an `sklearn.pipeline.Pipeline`.** This service
-   calls `predict_proba` on raw text and nothing else. Normalisation left
-   outside the pipeline has to be reimplemented here, and that copy is what
-   drifts. The loaded object must expose `predict_proba()` and `classes_`.
-2. **One class must be named `injection`.** The class index is read from
-   `classes_`, never assumed. A model without it is rejected at startup —
-   which is how an inverted score (clean prompts reading 0.95) is made
-   impossible rather than merely unlikely. The other class should be `clean`.
-3. **A card named `<artifact stem>.card.json` in the same directory.** For
-   `models/foo.joblib` that is `models/foo.card.json`. Example:
+The model reads 256 tokens at a time, so longer prompts are split into
+overlapping windows of 254 content tokens (room for `<s>` and `</s>`) with an
+overlap of 64, a stride of 190. The score is the maximum over the windows.
 
-   ```json
-   {
-     "model_version": "baseline-tfidf-0.1.0",
-     "stub": false,
-     "trained_at": "2026-09-20",
-     "dataset": "deepset/prompt-injections@<commit> + jackhhao/jailbreak-classification@<commit>",
-     "classes": ["clean", "injection"],
-     "metrics": { "precision": 0.94, "recall": 0.88, "roc_auc": 0.97, "eval_set": "held-out 20%" },
-     "environment": { "python": "3.14.0", "scikit-learn": "1.7.2", "numpy": "2.5.3" }
-   }
-   ```
+Past `CLASSIFIER_MAX_WINDOWS`, the first half and the last half of the windows
+are kept. Injected instructions are usually prepended or appended to otherwise
+harmless text, so the ends matter most.
 
-   What the service **enforces**: `model_version` (non-empty string of at most 64
-   characters, rejected at load otherwise; it is written to every audit row) and
-   `environment.scikit-learn`. `stub` is optional and defaults to `false`.
-   Everything else is provenance for humans and is not validated, but fill it in
-   honestly — the card is the only record of what the model was trained on.
-   Set `"stub": true` only for placeholders; it triggers the startup warning.
-4. **`environment.scikit-learn` must exactly match the version installed
-   here** (currently `1.7.2`, pinned in `requirements.txt`). The service
-   refuses to start on a mismatch. scikit-learn does not support loading
-   pickles across versions, and without this check a mismatch shows up as
-   quietly shifted scores rather than as an exception. If you trained on a
-   different version, either retrain on the pinned one or change the pin in
-   `requirements.txt` in the same pull request. Also record `numpy` — it is not
-   checked, but a pickle is sensitive to it.
-5. **Artifacts arrive by pull request, never by file transfer.**
-   `joblib.load` executes arbitrary code from the file. A review and a commit
-   give the artifact provenance. For a transformer, prefer `safetensors` over
-   pickle and Git LFS for the weights — a 250 MB binary enters git history
-   permanently.
+With the default of 3 windows, prompts up to about 630 tokens (roughly 2,500
+characters) are read in full. Beyond that the first two and the last window are
+scored and **the middle is not**. This is a known evasion path: an injection
+buried in the middle of a long text can go unseen. Raising the cap trades
+latency for coverage (see [Latency](#latency)).
 
-Check your delivery before opening the pull request. From the `ml-classifier/`
-directory, with `pip install -r requirements.txt` done, start the service with
-`MODEL_PATH` pointing at it (`uvicorn app.main:app --port 7000`) and call
-`GET /health`. A bad artifact fails at startup with a message naming the
-problem; a good one reports your `model_version` and `"stub": false`.
+Special tokens are neutralised: user text is tokenised with special-token
+matching disabled and the control ids (`<s>`, `</s>`, `<pad>`, `<mask>`) are
+dropped, so typed control tokens cannot fake sequence structure. `<unk>` is
+kept.
 
-The `prod` image bakes in everything under `models/`, so a delivery is
-shipped by the same pull request that adds the artifact.
+Each request is one inference at a time by default
+(`CLASSIFIER_MAX_CONCURRENCY=1`). Concurrent requests queue, and requests that
+wait past the gateway's budget fail open and are audited as `ml_unavailable`.
+
+## Latency
+
+Measured with `python -m scripts.benchmark --repeats 5` on a Windows dev box
+(16 logical CPUs, torch 2.15.0+cpu); see below.
+
+| threads | windows | chars | median ms | max ms |
+|---------|---------|-------|-----------|--------|
+| 8 (torch default here) | 1 | 68 | 59 | 68 |
+| 8 | 4 | 3672 | 884 | 951 |
+| 8 | 8 | 7956 | 1643 | 1658 |
+| 2 (compose CPU limit) | 1 | 68 | 93 | 93 |
+| 2 | 2 | 1496 | 767 | 777 |
+| 2 | 3 | 2584 | 1133 | 1141 |
+| 2 | 4 | 3672 | 1494 | 1530 |
+| 2 | 8 | 7956 | 2840 | 3019 |
+
+The gateway gives the classifier 2 s (`CLASSIFIER_TIMEOUT_SECONDS`) and fails
+open. At compose's limit of 2 CPUs, 8 windows (2.8 s) blows that budget and 4
+(1.5 s) leaves no headroom for queueing and the network, so the default cap is
+3 (about 1.1 s). Re-measure on your hardware with `python -m scripts.benchmark`
+whenever the model, the CPU limit or the cap changes.
+
+## Delivering a new model version
+
+1. Push the model to Hugging Face.
+2. Update `models/xlm-roberta-pi.card.json`: `source.revision`, the four sha256
+   values and `model_version`. `model_version` is limited to 64 characters and
+   is written to every audit row.
+3. Run `python -m scripts.fetch_model`, `pytest` and `python -m scripts.benchmark`,
+   and revisit the window cap against the new latency numbers.
+4. Open a pull request. The card is the provenance record.
+
+Only safetensors and only offline loading are accepted, and `trust_remote_code`
+is never used.
 
 ## Evaluation
 
@@ -129,18 +162,18 @@ Measure it here instead. Run from the `ml-classifier/` directory (the scripts
 import `app` and `scripts`, so `python scripts/evaluate.py` will not work):
 
 No evaluation set is committed (there is no `ml-classifier/data/`); you supply
-`eval.csv` yourself.
+`eval.csv` yourself. The S-Labs test split is held out from training and suits
+calibration.
 
 ```bash
-python -m scripts.evaluate models/<artifact>.joblib path/to/eval.csv
-python -m scripts.evaluate models/<artifact>.joblib path/to/eval.csv --adversarial
+python -m scripts.evaluate models/xlm-roberta-pi.card.json path/to/eval.csv [--adversarial] [--model-dir DIR]
 ```
 
-The first prints precision, recall and false-positive rate across a threshold
+Without `--adversarial` the script prints precision, recall and false-positive rate across a threshold
 grid (0.1 to 0.9 in steps of 0.1, then 0.95) — this is where the gateway's
 `CLASSIFIER_BLOCK_THRESHOLD` and `CLASSIFIER_REVIEW_THRESHOLD` values should
 come from. The values currently configured, `0.90` and `0.60`, are
-**uncalibrated placeholders**. The second re-scores the injection rows after
+**uncalibrated placeholders**. With `--adversarial` it re-scores the injection rows after
 obfuscation (leetspeak, spacing, zero-width characters, base64, upper-snake)
 and reports each variant's recall, which is the MITRE ATLAS AML.T0015
 measurement. Compare it with the baseline recall to get the drop.

@@ -7,7 +7,7 @@ The project is based on a microservices architecture (Monorepo) targeted for dep
 * **Frontend Chat:** React (User interface for prompts)
 * **Frontend CISO:** React (Analytics dashboard for security)
 * **API Gateway Proxy:** FastAPI (Authorization gateway and LLM proxy)
-* **ML Classifier:** FastAPI + scikit-learn (prompt injection scoring; PyTorch arrives with the stage 2 transformer)
+* **ML Classifier:** FastAPI + PyTorch (XLM-RoBERTa prompt-injection scoring, Polish and English)
 * **Database:** PostgreSQL
 
 ## Repository Structure
