@@ -9,8 +9,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 LABELS = frozenset({"injection", "clean"})
-# Fine steps at the top: the model's attack scores cluster at 0.98-0.999.
-GRID = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.97, 0.98, 0.99)
+# Fine steps at the top: attack scores cluster at 0.98-0.999, and so do
+# the model's false positives on ordinary editing requests.
+GRID = (
+    0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,
+    0.95, 0.97, 0.98, 0.99, 0.995, 0.997, 0.998, 0.999,
+)  # fmt: skip
 
 
 @dataclass(frozen=True)
