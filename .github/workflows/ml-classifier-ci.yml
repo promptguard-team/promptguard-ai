@@ -73,9 +73,9 @@ jobs:
       - name: Step 5 - Secret Detection
         run: |
           pip install detect-secrets
-          # The model card's sha256/commit hashes are public provenance, not secrets
-          # (detect-secrets flags them as high-entropy hex).
-          detect-secrets scan --exclude-files 'models/.*\.card\.json$' > secrets-report.json
+          # The pinned model and data card hashes are public provenance, not
+          # secrets (detect-secrets flags them as high-entropy hex).
+          detect-secrets scan --exclude-files '(models|data)/.*\.card\.json$' > secrets-report.json
           if [ "$(jq '.results | length' secrets-report.json)" -gt 0 ]; then
             echo "❌ CRITICAL: Potential secrets have been detected in the Python code!"
             cat secrets-report.json

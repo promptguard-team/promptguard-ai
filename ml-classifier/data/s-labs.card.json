@@ -1,0 +1,9 @@
+{
+  "repo": "S-Labs/prompt-injection-dataset",
+  "revision": "002a9dd18514abd021869823d6b0429b38606d99",
+  "licence": "MIT",
+  "files": {
+    "data/test.csv": "4c7a9f0fff2bf7d3f6d3e7b84863a8f5d6c48c70c3ac7fe874917074c8f27853",
+    "data/train.csv": "bab012fec95d4214599b18777fd6efc5cc5e9545354df581880aeca5c1d487d7"
+  }
+}
