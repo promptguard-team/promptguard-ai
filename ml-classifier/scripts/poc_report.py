@@ -201,7 +201,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             continue
         m = metrics_at(ours, value)
         print(
-            f"\n{name} {value:.2f}: recall {fmt(m.recall)} ({m.tp}/{m.positives}), "
+            f"\n{name} {value:.3f}: recall {fmt(m.recall)} ({m.tp}/{m.positives}), "
             f"FPR {fmt(m.fpr)} ({m.fp}/{m.negatives})"
         )
 
@@ -230,7 +230,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if block is not None:
             m = metrics_at(held_out, block)
             print(
-                f"\nAt block {block:.2f}: recall {fmt(m.recall)}, FPR {fmt(m.fpr)} "
+                f"\nAt block {block:.3f}: recall {fmt(m.recall)}, FPR {fmt(m.fpr)} "
                 f"({m.fp}/{m.negatives})"
             )
     return 0

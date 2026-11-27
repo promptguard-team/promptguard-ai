@@ -157,4 +157,10 @@ def test_grid_table_is_markdown_with_counts():
     table = grid_table(SAMPLE, grid=(0.5,))
     lines = table.splitlines()
     assert lines[0] == "| threshold | precision | recall | FPR | FP | FN |"
-    assert lines[2] == "| 0.50 | 0.500 | 1.000 | 0.667 | 2/3 | 0/2 |"
+    assert lines[2] == "| 0.500 | 0.500 | 1.000 | 0.667 | 2/3 | 0/2 |"
+
+
+def test_grid_table_keeps_fine_thresholds_distinct():
+    table = grid_table(SAMPLE, grid=(0.99, 0.995, 0.998))
+    rows = [line.split(" | ")[0] for line in table.splitlines()[2:]]
+    assert rows == ["| 0.990", "| 0.995", "| 0.998"]

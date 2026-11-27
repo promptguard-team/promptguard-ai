@@ -185,7 +185,7 @@ def grid_table(scored: Sequence[Scored], grid: Sequence[float] = GRID) -> str:
     for threshold in grid:
         m = metrics_at(scored, threshold)
         lines.append(
-            f"| {threshold:.2f} | {fmt(m.precision)} | {fmt(m.recall)} | "
+            f"| {threshold:.3f} | {fmt(m.precision)} | {fmt(m.recall)} | "
             f"{fmt(m.fpr)} | {m.fp}/{m.negatives} | {m.fn}/{m.positives} |"
         )
     return "\n".join(lines)
