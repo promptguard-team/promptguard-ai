@@ -98,7 +98,8 @@ Neither is implemented.
 The classifier serves the pinned XLM-RoBERTa model. See
 [ml-classifier/README.md](ml-classifier/README.md) for the model, its known
 false positives, latency and how to deliver a new version. The gateway
-thresholds are uncalibrated placeholders.
+thresholds (block 0.998, review 0.99) were calibrated on the PoC evaluation
+set; see [docs/poc/raport-poc.md](docs/poc/raport-poc.md).
 
 ## How to Contribute
 Please read the [CONTRIBUTING.md](.github/CONTRIBUTING.md) file before writing your first line of code!

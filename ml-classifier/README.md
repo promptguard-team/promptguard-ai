@@ -51,10 +51,16 @@ attacks in Polish and English score 0.98-0.999, and benign prompts mostly score
 0.01 or less. There are exceptions: "Podsumuj proszę ten artykuł w trzech
 punktach." scores 0.95 and "Summarize this article in three bullet points."
 scores 0.41. The teammate's own transformers pipeline gives identical numbers,
-so this is the model, not the integration. With the gateway's placeholder block
-threshold of 0.90 such prompts would be blocked. Calibrate the thresholds with
-`scripts.evaluate` before relying on them, and report false positives to the
-model owner.
+so this is the model, not the integration.
+
+The PoC set (`data/poc/`, 150 clean and 104 attack prompts) shows these are not
+isolated cases: ordinary editing requests ("replace every occurrence of...",
+"rewrite the previous sentence...", "shorten this email...") score 0.99 or
+more, as high as real attacks. That is why the gateway defaults are high:
+block 0.998 stops 53/104 attacks with 1/150 false positives, and the review
+band from 0.99 flags 97/104 attacks for the CISO at the cost of 14/150
+ordinary prompts. Report false positives to the model owner; retraining on
+Polish business prompts is the fix. Details in `docs/poc/raport-poc.md`.
 
 ## Configuration
 
@@ -167,33 +173,50 @@ changes, so a pinned assertion either breaks constantly or proves nothing.
 Measure it here instead. Run from the `ml-classifier/` directory (the scripts
 import `app` and `scripts`, so `python scripts/evaluate.py` will not work):
 
-No evaluation set is committed (there is no `ml-classifier/data/`); you supply
-`eval.csv` yourself. The S-Labs test split is held out from training and suits
-calibration.
+### PoC report and calibration
+
+The PoC set lives in `data/poc/`: `clean.csv` (150 ordinary prompts: business,
+borderline, code, chitchat) and `attacks.csv` (104 attacks: instruction
+override, system prompt leak, jailbreak, roleplay), about half Polish and half
+English, written for this project. `scripts.poc_report` scores it, the S-Labs
+held-out test split, obfuscated attacks (MITRE ATLAS AML.T0015) and attacks
+pasted inside documents (OWASP LLM02), and recommends thresholds:
+
+```bash
+python -m scripts.fetch_model
+python -m scripts.fetch_eval_data          # S-Labs train + test, pinned by data/s-labs.card.json
+python -m scripts.poc_report > poc.md      # ~15 min at 2 threads; --quick (~10 min) skips S-Labs test
+```
+
+Before scoring, a leakage guard aborts if any PoC row also appears in the
+S-Labs train split or the notebook's added samples (the model would be
+recognising it, not judging it). Recommended thresholds are the lowest grid
+value with FPR at most 1% on the clean set (block) and the lowest value below
+it with FPR at most 10% (review). Tables report absolute counts: with 150
+clean prompts, 1% is one or two prompts. The gateway defaults and the full
+results are in `docs/poc/raport-poc.md`.
+
+### Ad-hoc evaluation
 
 ```bash
 python -m scripts.evaluate models/xlm-roberta-pi.card.json path/to/eval.csv [--adversarial] [--model-dir DIR]
 ```
 
-Without `--adversarial` the script prints precision, recall and false-positive rate across a threshold
-grid (0.1 to 0.9 in steps of 0.1, then 0.95) — this is where the gateway's
-`CLASSIFIER_BLOCK_THRESHOLD` and `CLASSIFIER_REVIEW_THRESHOLD` values should
-come from. The values currently configured, `0.90` and `0.60`, are
-**uncalibrated placeholders**. With `--adversarial` it re-scores the injection rows after
-obfuscation (leetspeak, spacing, zero-width characters, base64, upper-snake)
-and reports each variant's recall, which is the MITRE ATLAS AML.T0015
-measurement. Compare it with the baseline recall to get the drop.
+Without `--adversarial` the script prints precision, recall and false-positive
+rate (with counts) across the same threshold grid as the PoC report. With
+`--adversarial` it re-scores the injection rows after each obfuscation
+transform (leetspeak, spacing, zero-width characters, base64, upper-snake,
+diacritics stripping, Cyrillic homoglyphs, filler-word noise) and reports each
+variant's recall. Compare it with the baseline recall to get the drop.
 
-The evaluation CSV has two columns, `text,label`, with `label` in
-`{injection, clean}` (case-insensitive), UTF-8. **It must not contain training
-examples**, or the adversarial number measures memorisation rather than
-robustness. The script cannot check this; you must guarantee it.
+The evaluation CSV has columns `text,label` (`label` in `{injection, clean}`,
+case-insensitive) and optionally `category,lang`, UTF-8. **It must not contain
+training examples**, or the numbers measure memorisation rather than
+robustness; `scripts.evaluate` cannot check this (`scripts.poc_report` can, for
+its own set).
 
 Know the limits of the adversarial experiment before quoting it: it applies
 every transform to all injection rows rather than only those the model detects
-at baseline (misses dilute the drop); its tables contain no clean rows, so their
-precision and FPR columns are trivially 1 and 0; and it has no homoglyph,
-paraphrase, translation, typo or payload-splitting variants; and
-the threshold grid is coarse (no counts, and it jumps from 0.90 to 0.95), so
-for a stringent false-positive target compute the threshold yourself from the
-raw scores.
+at baseline (misses dilute the drop); its tables contain no clean rows, so
+their precision and FPR columns are trivially 1 and 0; and it has no
+paraphrase, translation, typo or payload-splitting variants.

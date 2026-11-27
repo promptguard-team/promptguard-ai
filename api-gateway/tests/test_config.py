@@ -43,8 +43,8 @@ def test_classifier_defaults():
     settings = Settings()
     assert settings.classifier_url == "http://ml:7000"
     assert settings.classifier_timeout_seconds == 2.0
-    assert settings.classifier_block_threshold == 0.90
-    assert settings.classifier_review_threshold == 0.60
+    assert settings.classifier_block_threshold == 0.998
+    assert settings.classifier_review_threshold == 0.99
 
 
 def test_block_threshold_below_review_threshold_is_rejected(monkeypatch):

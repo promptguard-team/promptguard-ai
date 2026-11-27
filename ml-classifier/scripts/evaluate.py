@@ -17,8 +17,8 @@ drop is meaningless: the model is recognising the original examples rather than
 resisting their obfuscated forms. This script cannot check that; the caller
 must guarantee it.
 
-Use the baseline table to choose the block and review thresholds; the values
-currently configured in the gateway (0.90 / 0.60) are unmeasured placeholders.
+scripts.poc_report recommends thresholds from the PoC set; the gateway
+defaults come from it.
 """
 
 import argparse
