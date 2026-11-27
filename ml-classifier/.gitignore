@@ -1,0 +1,4 @@
+# Fetched by scripts/fetch_model.py; pinned by models/xlm-roberta-pi.card.json.
+models/xlm-roberta-pi/
+# Fetched by scripts/fetch_eval_data.py; pinned by data/s-labs.card.json.
+data/external/

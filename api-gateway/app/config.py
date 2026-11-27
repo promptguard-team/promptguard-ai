@@ -26,8 +26,11 @@ class Settings(BaseSettings):
 
     classifier_url: str = "http://ml:7000"
     classifier_timeout_seconds: float = 2.0
-    classifier_block_threshold: float = 0.90
-    classifier_review_threshold: float = 0.60
+    # Calibrated on the PL/EN PoC set (docs/poc/raport-poc.md). Block keeps
+    # false positives at or below 1% of ordinary prompts; the review band
+    # sends most of the attacks that pass the block to the CISO queue.
+    classifier_block_threshold: float = 0.998
+    classifier_review_threshold: float = 0.99
 
     @property
     def database_url(self) -> str:

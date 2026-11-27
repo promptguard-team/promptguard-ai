@@ -14,6 +14,15 @@ from tests.helpers import (
 
 _FAKE_AWS_KEY = "AKIAIOSFODNN7EXAMPLE"  # pragma: allowlist secret
 
+_SETTINGS = get_settings()
+BLOCK = _SETTINGS.classifier_block_threshold
+REVIEW = _SETTINGS.classifier_review_threshold
+# Scenario scores derived from the configured thresholds, so recalibration
+# never silently moves a scenario into another band.
+HIGH = (BLOCK + 1.0) / 2  # clearly blocked
+MIDDLE = (BLOCK + REVIEW) / 2  # review band
+LOW = REVIEW / 2  # clearly allowed
+
 
 async def test_chat_requires_auth(app, client):
     resp = await client.post("/chat", json={"prompt": "hello"})
@@ -125,7 +134,7 @@ async def test_chat_returns_502_when_provider_sends_null_content(
 
 
 async def test_high_score_blocks_the_prompt(app, client, auth_headers):
-    override_classifier(app, scoring(0.95))
+    override_classifier(app, scoring(HIGH))
     llm_calls = counting_llm(app)
     resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
     assert resp.status_code == 403
@@ -137,12 +146,12 @@ async def test_high_score_blocks_the_prompt(app, client, auth_headers):
     assert events[0].action == AuditAction.blocked_prompt
     assert events[0].rule is None
     assert events[0].ml_status == MLStatus.ok
-    assert events[0].ml_score == 0.95
+    assert events[0].ml_score == pytest.approx(HIGH)
     assert events[0].ml_model_version == "test-model-0"
 
 
 async def test_middle_band_is_allowed_and_flagged(app, client, auth_headers):
-    override_classifier(app, scoring(0.70))
+    override_classifier(app, scoring(MIDDLE))
     resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
     assert resp.status_code == 200
     events = await audit_events(app)
@@ -153,7 +162,7 @@ async def test_middle_band_is_allowed_and_flagged(app, client, auth_headers):
 
 
 async def test_low_score_is_allowed_and_not_flagged(app, client, auth_headers):
-    override_classifier(app, scoring(0.05, label="clean"))
+    override_classifier(app, scoring(LOW, label="clean"))
     resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
     assert resp.status_code == 200
     events = await audit_events(app)
@@ -215,7 +224,7 @@ async def test_flagged_prompt_with_leaky_response_records_both(
 ):
     # The collision the two-axis design exists for: how the request ended and
     # what the model thought are independent facts.
-    override_classifier(app, scoring(0.70))
+    override_classifier(app, scoring(MIDDLE))
 
     def leaky(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -230,13 +239,13 @@ async def test_flagged_prompt_with_leaky_response_records_both(
     assert events[0].action == AuditAction.blocked_response
     assert events[0].rule == "aws_access_key"
     assert events[0].flagged is True
-    assert events[0].ml_score == 0.70
+    assert events[0].ml_score == pytest.approx(MIDDLE)
 
 
 async def test_blocked_prompt_is_never_flagged(app, client, auth_headers):
     # flagged means "allowed but needs review". A blocked row is not awaiting
     # a decision, so it must not appear in the CISO review queue.
-    override_classifier(app, scoring(0.99))
+    override_classifier(app, scoring(HIGH))
     await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
     events = await audit_events(app)
     assert events[0].flagged is False
@@ -245,11 +254,11 @@ async def test_blocked_prompt_is_never_flagged(app, client, auth_headers):
 @pytest.mark.parametrize(
     "score,llm_content,prompt",
     [
-        (0.95, "ok", "hi"),
-        (0.70, "ok", "hi"),
-        (0.05, "ok", "hi"),
-        (0.05, _FAKE_AWS_KEY, "hi"),
-        (0.05, "ok", f"use {_FAKE_AWS_KEY}"),
+        (HIGH, "ok", "hi"),
+        (MIDDLE, "ok", "hi"),
+        (LOW, "ok", "hi"),
+        (LOW, _FAKE_AWS_KEY, "hi"),
+        (LOW, "ok", f"use {_FAKE_AWS_KEY}"),
     ],
 )
 async def test_exactly_one_audit_row_per_request(
@@ -272,22 +281,20 @@ async def test_score_exactly_at_the_block_threshold_is_blocked(
     app, client, auth_headers
 ):
     # The thresholds are inclusive ("at or above"), and the decision boundary
-    # is the one value the scenario scores (0.95/0.70/0.05) never touch:
+    # is the one value the scenario scores (HIGH/MIDDLE/LOW) never touch:
     # turning either `>=` into `>` leaves all of them passing.
-    assert get_settings().classifier_block_threshold == 0.90
-    override_classifier(app, scoring(0.90))
+    override_classifier(app, scoring(BLOCK))
     resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
     assert resp.status_code == 403
     events = await audit_events(app)
     assert events[0].action == AuditAction.blocked_prompt
-    assert events[0].ml_score == 0.90
+    assert events[0].ml_score == pytest.approx(BLOCK)
 
 
 async def test_score_exactly_at_the_review_threshold_is_allowed_and_flagged(
     app, client, auth_headers
 ):
-    assert get_settings().classifier_review_threshold == 0.60
-    override_classifier(app, scoring(0.60))
+    override_classifier(app, scoring(REVIEW))
     resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
     assert resp.status_code == 200
     events = await audit_events(app)
@@ -300,7 +307,7 @@ async def test_score_just_below_the_review_threshold_is_not_flagged(
 ):
     # The negative half of the boundary: without it, `score >= 0` would also
     # satisfy the two cases above.
-    override_classifier(app, scoring(0.5999))
+    override_classifier(app, scoring(REVIEW - 1e-4))
     resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
     assert resp.status_code == 200
     events = await audit_events(app)
@@ -321,9 +328,9 @@ async def test_verdict_too_wide_for_the_audit_columns_fails_open(
     # SQLite does not enforce VARCHAR width, so this test cannot observe the
     # DataError PostgreSQL would raise; what it pins is that such a verdict
     # never reaches the INSERT at all, and is recorded as an outage.
-    override_classifier(app, scoring(0.95, label=label, version=version))
+    override_classifier(app, scoring(HIGH, label=label, version=version))
     resp = await client.post("/chat", json={"prompt": "hi"}, headers=auth_headers)
-    # 0.95 would have blocked; an unusable verdict must fail open instead of
+    # HIGH would have blocked; an unusable verdict must fail open instead of
     # being acted on.
     assert resp.status_code == 200
     events = await audit_events(app)

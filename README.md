@@ -7,7 +7,7 @@ The project is based on a microservices architecture (Monorepo) targeted for dep
 * **Frontend Chat:** React (User interface for prompts)
 * **Frontend CISO:** React (Analytics dashboard for security)
 * **API Gateway Proxy:** FastAPI (Authorization gateway and LLM proxy)
-* **ML Classifier:** FastAPI + scikit-learn (prompt injection scoring; PyTorch arrives with the stage 2 transformer)
+* **ML Classifier:** FastAPI + PyTorch (XLM-RoBERTa prompt-injection scoring, Polish and English)
 * **Database:** PostgreSQL
 
 ## Repository Structure
@@ -93,11 +93,13 @@ Neither is implemented.
 * `POST /classify` — score one prompt; returns `label`, `score` (P(injection))
   and `model_version`. It returns a measurement, never a verdict.
 * `GET /health` — readiness probe; reports `model_version` and whether the
-  served artifact is a stub.
+  served model is a stub (`false` for the current model).
 
-The shipped model is a labelled stub, not a security control. See
-[ml-classifier/README.md](ml-classifier/README.md) for the artifact contract
-and how to deliver a real model.
+The classifier serves the pinned XLM-RoBERTa model. See
+[ml-classifier/README.md](ml-classifier/README.md) for the model, its known
+false positives, latency and how to deliver a new version. The gateway
+thresholds (block 0.998, review 0.99) were calibrated on the PoC evaluation
+set; see [docs/poc/raport-poc.md](docs/poc/raport-poc.md).
 
 ## How to Contribute
 Please read the [CONTRIBUTING.md](.github/CONTRIBUTING.md) file before writing your first line of code!

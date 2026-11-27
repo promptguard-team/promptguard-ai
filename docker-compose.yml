@@ -104,9 +104,15 @@ services:
       target: builder
     container_name: promptguard_ml
     working_dir: /app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 7000 --reload
+    # Idempotent: downloads the pinned weights on first start, then only verifies them.
+    command: sh -c "python -m scripts.fetch_model && exec uvicorn app.main:app --host 0.0.0.0 --port 7000 --reload"
     volumes:
       - ./ml-classifier:/app
+      - ml_weights:/app/models/xlm-roberta-pi
+    environment:
+      # Matches the 2-CPU limit below; torch otherwise uses the host core count
+      # and oversubscribes the container.
+      CLASSIFIER_TORCH_THREADS: '2'
     healthcheck:
       test:
         - CMD
@@ -116,7 +122,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      # The first start downloads ~1.1 GB before the server listens.
+      start_period: 600s
     networks:
       - backend_net
     security_opt:
@@ -125,7 +132,7 @@ services:
       resources:
         limits:
           cpus: '2.0'
-          memory: 2048M
+          memory: 3072M
     restart: always
 
   db:
@@ -213,6 +220,7 @@ volumes:
   db_data:
   monitoring_data:
   metrics_data:
+  ml_weights:
 
 networks:
   frontend_net:
