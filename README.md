@@ -80,8 +80,11 @@ Neither is implemented.
 * `POST /auth/login` — exchange credentials for a JWT access token.
 * `GET /auth/me` — return the authenticated user's own account.
 * `POST /chat` — proxy a prompt to the LLM provider; blocks and audits any
-  request or reply containing a detected credential or PESEL. After the rule
-  engine, the prompt is scored by the ML Classifier (Layer 2): at or above
+  request or reply containing a detected credential or PESEL. Text is
+  inspected in a normalized form (zero-width characters removed, spaced-out
+  characters joined, look-alike Cyrillic letters in mixed words mapped to
+  Latin) while the original is forwarded; matched secrets are stored in the
+  audit as `[REDACTED:<rule>]`. After the rule engine, the prompt is scored by the ML Classifier (Layer 2): at or above
   `CLASSIFIER_BLOCK_THRESHOLD` it is blocked, at or above
   `CLASSIFIER_REVIEW_THRESHOLD` it is allowed but flagged for review. If the
   classifier is unavailable the request fails open and the audit row records

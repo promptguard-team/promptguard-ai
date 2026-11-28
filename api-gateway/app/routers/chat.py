@@ -15,7 +15,8 @@ from app.deps import (
 )
 from app.llm import LLMClient, LLMError
 from app.models import AuditAction, AuditEvent, MLStatus, User
-from app.rules import scan_text
+from app.normalize import normalize
+from app.rules import find_secrets, first_rule, redact
 from app.schemas import ChatRequest, ChatResponse
 
 logger = logging.getLogger(__name__)
@@ -86,17 +87,23 @@ async def chat(
         status.HTTP_403_FORBIDDEN, detail="prompt blocked by content policy"
     )
 
-    prompt_match = scan_text(body.prompt)
-    if prompt_match is not None:
+    prompt_secrets = find_secrets(body.prompt)
+    if prompt_secrets:
         # A rule match is a hard block; there is nothing left to score, so
-        # ml_status stays `skipped`.
+        # ml_status stays `skipped`. The secret itself never reaches the audit.
         draft.action = AuditAction.blocked_prompt
-        draft.rule = prompt_match.rule
+        draft.rule = first_rule(prompt_secrets)
+        draft.prompt = redact(body.prompt, prompt_secrets)
         await _write(sessionmaker, draft)
         raise blocked
 
+    # The classifier scores the canonical form, so spacing, zero-width and
+    # homoglyph tricks do not lower the score; the LLM still gets the original.
+    inspected = normalize(body.prompt).text
     try:
-        verdict = await classifier.classify(body.prompt)
+        verdict = await classifier.classify(
+            inspected if inspected.strip() else body.prompt
+        )
     except ClassifierError as exc:
         # Fail open: Layer 1 still ran, and severing all LLM access during our
         # own outage would drive users around the proxy entirely. Log it: a
@@ -126,17 +133,18 @@ async def chat(
             status.HTTP_502_BAD_GATEWAY, detail="LLM provider unavailable"
         ) from exc
 
-    draft.response = reply
-    response_match = scan_text(reply)
-    if response_match is not None:
+    reply_secrets = find_secrets(reply)
+    if reply_secrets:
         draft.action = AuditAction.blocked_response
-        draft.rule = response_match.rule
+        draft.rule = first_rule(reply_secrets)
+        draft.response = redact(reply, reply_secrets)
         await _write(sessionmaker, draft)
         return ChatResponse(
             response="[response blocked by PromptGuard: content policy]",
             blocked=True,
         )
 
+    draft.response = reply
     draft.action = AuditAction.allowed
     await _write(sessionmaker, draft)
     return ChatResponse(response=reply)
