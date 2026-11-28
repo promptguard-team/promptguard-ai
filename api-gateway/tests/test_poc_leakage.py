@@ -95,6 +95,9 @@ async def test_leak_in_the_reply_is_blocked_and_audited(
     events = await audit_events(app)
     assert [event.action for event in events] == [AuditAction.blocked_response]
     assert events[0].rule == rule
+    # The CISO sees what leaked and where, never the value itself.
+    assert leak not in events[0].response
+    assert f"[REDACTED:{rule}]" in events[0].response
 
 
 @pytest.mark.xfail(
