@@ -1,5 +1,8 @@
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
+
+from app.normalize import compact, normalize, to_original_span
 
 # No word-boundary anchors on either edge of the credential prefixes: an
 # attacker can defeat a `\b`- or alnum-lookbehind-based anchor simply by
@@ -14,6 +17,9 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----", re.IGNORECASE
     ),
 }
+_PRIVATE_KEY_END = re.compile(r"-----END [A-Z ]*PRIVATE KEY-----", re.IGNORECASE)
+# Case-sensitive on purpose: used only on the compact view (see _RULES).
+_AWS_COMPACT = re.compile(r"AKIA[0-9A-Z]{16}")
 
 # Linear by construction: one bounded-below quantifier over a single character
 # class, with no overlapping alternative to backtrack into. The lookbehind
@@ -77,16 +83,113 @@ def _is_valid_pesel(digits: str) -> bool:
     return (10 - checksum % 10) % 10 == int(digits[10])
 
 
-def scan_text(text: str) -> RuleMatch | None:
-    """Return the first sensitive-data rule matching the text, if any."""
-    if _PATTERNS["aws_access_key"].search(text):
-        return RuleMatch(rule="aws_access_key")
-    if _matches_openai_key(text):
-        return RuleMatch(rule="openai_api_key")
-    if _PATTERNS["private_key_block"].search(text):
-        return RuleMatch(rule="private_key_block")
-    for candidate in _PESEL_CANDIDATE.findall(text):
-        digits = candidate.replace("-", "").replace(" ", "")
+@dataclass(frozen=True)
+class SecretMatch:
+    """A rule match located in the original (un-normalized) text."""
+
+    rule: str
+    start: int
+    end: int
+
+
+def _aws_spans(text: str) -> list[tuple[int, int]]:
+    return [m.span() for m in _PATTERNS["aws_access_key"].finditer(text)]
+
+
+def _openai_spans(text: str) -> list[tuple[int, int]]:
+    return [
+        m.span()
+        for m in _OPENAI_CANDIDATE.finditer(text)
+        if _OPENAI_KEY_BODY.search(m.group())
+    ]
+
+
+def _aws_compact_spans(text: str) -> list[tuple[int, int]]:
+    return [m.span() for m in _AWS_COMPACT.finditer(text)]
+
+
+def _private_key_spans(text: str) -> list[tuple[int, int]]:
+    # The span runs to the END line, or to the end of the text when it is
+    # missing, so redaction removes the key body and not just its header.
+    spans = []
+    position = 0
+    while header := _PATTERNS["private_key_block"].search(text, position):
+        footer = _PRIVATE_KEY_END.search(text, header.end())
+        stop = footer.end() if footer else len(text)
+        spans.append((header.start(), stop))
+        position = stop
+    return spans
+
+
+def _pesel_spans(text: str) -> list[tuple[int, int]]:
+    spans = []
+    for m in _PESEL_CANDIDATE.finditer(text):
+        digits = m.group().replace("-", "").replace(" ", "")
         if len(digits) == 11 and _is_valid_pesel(digits):
-            return RuleMatch(rule="pesel")
-    return None
+            spans.append(m.span())
+    return spans
+
+
+Spans = Callable[[str], list[tuple[int, int]]]
+
+# Priority order: the first rule here names a request's audit row. Only the
+# AWS rule also scans the compact view (short separators between
+# alphanumerics removed), and there case-sensitively: joining words could
+# otherwise spell "akia" plus 16 letters out of prose ("Kakiage tempura is
+# tasty"). PESEL must not use it, or phone numbers and ids written in digit
+# groups would become checksum candidates; OpenAI keys contain hyphens.
+_RULES: tuple[tuple[str, Spans, Spans | None], ...] = (
+    ("aws_access_key", _aws_spans, _aws_compact_spans),
+    ("openai_api_key", _openai_spans, None),
+    ("private_key_block", _private_key_spans, None),
+    ("pesel", _pesel_spans, None),
+)
+_PRIORITY = {name: index for index, (name, _, _) in enumerate(_RULES)}
+
+
+def find_secrets(text: str) -> list[SecretMatch]:
+    """Every rule match, inspected on the normalized text, spanned in text.
+
+    Overlapping or touching spans are merged; the merged span keeps the name
+    of its highest-priority rule. Sorted by position.
+    """
+    view = normalize(text)
+    squeezed = compact(view)
+    found: list[tuple[int, int, int, str]] = []
+    for name, spans, compact_spans in _RULES:
+        passes = [(view, spans)]
+        if compact_spans is not None:
+            passes.append((squeezed, compact_spans))
+        for candidate, finder in passes:
+            for start, end in finder(candidate.text):
+                first, last = to_original_span(candidate, start, end)
+                found.append((first, last, _PRIORITY[name], name))
+    found.sort()
+    merged: list[list] = []
+    for start, end, priority, name in found:
+        if merged and start <= merged[-1][1]:
+            last = merged[-1]
+            last[1] = max(last[1], end)
+            if priority < last[2]:
+                last[2], last[3] = priority, name
+        else:
+            merged.append([start, end, priority, name])
+    return [SecretMatch(name, start, end) for start, end, _, name in merged]
+
+
+def first_rule(matches: list[SecretMatch]) -> str:
+    """The highest-priority rule among matches (names the audit row)."""
+    return min(matches, key=lambda match: _PRIORITY[match.rule]).rule
+
+
+def redact(text: str, matches: list[SecretMatch]) -> str:
+    """text with every match replaced by [REDACTED:<rule>]."""
+    for match in sorted(matches, key=lambda m: m.start, reverse=True):
+        text = f"{text[: match.start]}[REDACTED:{match.rule}]{text[match.end :]}"
+    return text
+
+
+def scan_text(text: str) -> RuleMatch | None:
+    """Return the highest-priority sensitive-data rule matching the text."""
+    matches = find_secrets(text)
+    return RuleMatch(rule=first_rule(matches)) if matches else None

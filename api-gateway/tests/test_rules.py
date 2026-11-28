@@ -1,8 +1,9 @@
+import base64
 import time
 
 import pytest
 
-from app.rules import scan_text
+from app.rules import find_secrets, first_rule, redact, scan_text
 
 _FAKE_AWS_KEY = "AKIAIOSFODNN7EXAMPLE"  # pragma: allowlist secret
 _FAKE_OPENAI_KEY = "sk-abcdefghijklmnopqrstuvwxyz123456"  # pragma: allowlist secret
@@ -83,3 +84,92 @@ def test_scan_text_adversarial_input_is_linear_time():
     scan_text(adversarial)
     elapsed = time.perf_counter() - start
     assert elapsed < 1.0
+
+
+_PESEL = "44051401359"
+
+OBFUSCATED = [
+    pytest.param(" ".join(_FAKE_AWS_KEY), "aws_access_key", id="aws-spaced"),
+    pytest.param(
+        "-".join(_FAKE_AWS_KEY[i : i + 4] for i in range(0, 20, 4)),
+        "aws_access_key",
+        id="aws-hyphenated",
+    ),
+    pytest.param(
+        _FAKE_AWS_KEY[:10] + "\r\n" + _FAKE_AWS_KEY[10:],
+        "aws_access_key",
+        id="aws-split-lines",
+    ),
+    pytest.param("\u200b".join(_FAKE_AWS_KEY), "aws_access_key", id="aws-zero-width"),
+    pytest.param(
+        " ".join(_FAKE_OPENAI_PROJECT_KEY), "openai_api_key", id="openai-spaced"
+    ),
+    pytest.param(" ".join(_PESEL), "pesel", id="pesel-spaced"),
+    pytest.param(_PESEL[:4] + "\u200b" + _PESEL[4:], "pesel", id="pesel-zero-width"),
+]
+
+
+@pytest.mark.parametrize(("secret", "rule"), OBFUSCATED)
+def test_obfuscated_secrets_are_found_and_spanned_in_the_original(secret, rule):
+    text = f"Here: {secret}. Thanks"
+    [match] = find_secrets(text)
+    assert match.rule == rule
+    assert text[match.start : match.end] == secret
+
+
+def test_redact_replaces_every_match_with_its_rule():
+    text = f"a {_FAKE_AWS_KEY} b {_PESEL} c"
+    assert redact(text, find_secrets(text)) == (
+        "a [REDACTED:aws_access_key] b [REDACTED:pesel] c"
+    )
+
+
+def test_a_private_key_is_redacted_up_to_its_end_line():
+    text = (
+        "x -----BEGIN RSA PRIVATE KEY-----\nMIIEow\n"  # pragma: allowlist secret
+        "-----END RSA PRIVATE KEY----- y"
+    )
+    assert redact(text, find_secrets(text)) == "x [REDACTED:private_key_block] y"
+
+
+def test_a_private_key_without_an_end_line_is_redacted_to_the_end():
+    text = "x -----BEGIN OPENSSH PRIVATE KEY-----\nMIIE"  # pragma: allowlist secret
+    assert redact(text, find_secrets(text)) == "x [REDACTED:private_key_block]"
+
+
+def test_first_rule_follows_the_priority_order_not_the_position():
+    assert first_rule(find_secrets(f"{_PESEL} then {_FAKE_AWS_KEY}")) == (
+        "aws_access_key"
+    )
+
+
+def test_matches_are_sorted_and_separate_secrets_stay_separate():
+    matches = find_secrets(f"{_FAKE_AWS_KEY} {_FAKE_AWS_KEY}")
+    assert [(m.start, m.end) for m in matches] == [(0, 20), (21, 41)]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Telefon: 600 700 800",
+        "NIP 123-456-32-18",
+        "konto 12 1020 1026 0000 0402 0005 1234",
+        "Kakiage tempura is tasty today",
+        "a w z i o",
+    ],
+)
+def test_ordinary_text_is_not_flagged_after_normalization(text):
+    assert find_secrets(text) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        base64.b64encode(_FAKE_AWS_KEY.encode()).decode(),
+        "0" + _PESEL,
+        "440.514.013.59",
+    ],
+)
+def test_known_gaps_stay_undetected(text):
+    # Documented in the PoC report; a change here must update the report.
+    assert find_secrets(text) == []

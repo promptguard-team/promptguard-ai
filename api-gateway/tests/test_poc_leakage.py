@@ -4,8 +4,10 @@ Scenario from the attack taxonomy: the LLM reveals a secret in its reply. The
 stubbed provider returns each leak; the gateway must replace the reply, audit
 it as blocked_response with the rule name, and never hand the value back.
 
-Forms the regex rules knowingly miss are strict xfails: they document the gap
-in the PoC report and turn into failures the day a rule change closes them.
+The rules inspect normalized text, so spaced-out, hyphen-grouped, line-split
+and zero-width-padded secrets are caught too. Forms they still miss (base64,
+a digit-padded or dotted PESEL) are strict xfails: they document the gap in the
+PoC report and turn into failures the day a rule change closes them.
 """
 
 import base64
@@ -42,19 +44,25 @@ DETECTED = [
     pytest.param("PESEL: 440514-01359", "pesel", id="pesel-hyphen"),
     pytest.param("PESEL: 440514 01359", "pesel", id="pesel-space"),
     pytest.param(f"{PESEL}x", "pesel", id="pesel-glued-letter"),
+    # Closed by input normalization (previously known gaps).
+    pytest.param(" ".join(AWS_KEY), "aws_access_key", id="aws-spaced"),
+    pytest.param(
+        "-".join(AWS_KEY[i : i + 4] for i in range(0, 20, 4)),
+        "aws_access_key",
+        id="aws-hyphenated",
+    ),
+    pytest.param(
+        AWS_KEY[:10] + "\n" + AWS_KEY[10:], "aws_access_key", id="aws-split-lines"
+    ),
+    pytest.param("​".join(AWS_KEY), "aws_access_key", id="aws-zero-width"),
+    pytest.param(" ".join(OPENAI_KEY), "openai_api_key", id="openai-spaced"),
+    pytest.param(" ".join(PESEL), "pesel", id="pesel-spaced"),
 ]
 
 KNOWN_GAPS = [
-    pytest.param(" ".join(AWS_KEY), id="aws-spaced"),
-    pytest.param(
-        "-".join(AWS_KEY[i : i + 4] for i in range(0, 20, 4)), id="aws-hyphenated"
-    ),
-    pytest.param(AWS_KEY[:10] + "\n" + AWS_KEY[10:], id="aws-split-lines"),
     pytest.param(base64.b64encode(AWS_KEY.encode()).decode(), id="aws-base64"),
-    pytest.param(" ".join(OPENAI_KEY), id="openai-spaced"),
     pytest.param("0" + PESEL, id="pesel-digit-padded"),
     pytest.param("440.514.013.59", id="pesel-dotted"),
-    pytest.param(" ".join(PESEL), id="pesel-spaced"),
 ]
 
 
@@ -92,7 +100,7 @@ async def test_leak_in_the_reply_is_blocked_and_audited(
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="known gap: the rules match secrets only in their canonical form",
+    reason="known gap: no decoding, and PESEL digit groups are never joined",
 )
 @pytest.mark.parametrize("leak", KNOWN_GAPS)
 async def test_obfuscated_leak_in_the_reply_is_blocked(app, client, auth_headers, leak):
