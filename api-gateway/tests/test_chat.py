@@ -89,7 +89,8 @@ async def test_chat_blocks_leaky_response(app, client, auth_headers):
     assert len(events) == 1
     assert events[0].action == AuditAction.blocked_response
     assert events[0].rule == "aws_access_key"
-    assert events[0].response == f"sure: {_FAKE_AWS_KEY}"
+    # The audit keeps the context but never the secret itself.
+    assert events[0].response == "sure: [REDACTED:aws_access_key]"
 
 
 async def test_chat_returns_502_when_provider_down(app, client, auth_headers):
