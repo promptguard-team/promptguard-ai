@@ -13,7 +13,7 @@ TRICKY = [
     "a\u200bb\u200dc\ufeff",
     "Привет мир",
     "H\u0435llo",
-    " ".join("AKIAIOSFODNN7EXAMPLE"),
+    " ".join("AKIAIOSFODNN7EXAMPLE"),  # pragma: allowlist secret
     "x\r\ny",
     "",
 ]
@@ -79,7 +79,7 @@ def test_origin_and_spans_point_at_the_original_text():
 
 def test_compact_drops_short_separators_between_alphanumerics():
     view = compact(normalize("AKIA-IOSF\r\nODNN.7EXA_MPLE"))
-    assert view.text == "AKIAIOSFODNN7EXAMPLE"
+    assert view.text == "AKIAIOSFODNN7EXAMPLE"  # pragma: allowlist secret
 
 
 def test_compact_keeps_long_gaps_and_separators_next_to_punctuation():
